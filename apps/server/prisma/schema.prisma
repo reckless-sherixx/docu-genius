@@ -23,5 +23,4 @@ model User {
   email_verified_at    DateTime?
   email_verify_token   String?
   created_at           DateTime  @default(now())
-
 }

@@ -5,7 +5,8 @@ import cors from 'cors';
 import ejs from 'ejs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { sendEmail } from './config/mail.config.js';
+import { emailQueue, emailQueueName } from './queues/email.queue.js';
+import authRoutes from './routes/auth.route.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,16 +19,19 @@ export const createApp = (): Express => {
     app.use(express.json());
     app.use(express.urlencoded({ extended: false }));
 
-    app.set("view engine" , "ejs");
-    app.set("views" , path.resolve(__dirname, "./lib/views"));
+    app.set("view engine", "ejs");
+    app.set("views", path.resolve(__dirname, "./lib/views"));
 
+    // Routes
+    app.use("/api/auth", authRoutes);
 
-    app.get("/" , async(req:Request, res:Response) => {
-        const html = await ejs.renderFile(__dirname + `/lib/views/emails/welcome.ejs` , { name : "Vidyansh Singh"})
-        await sendEmail("24155442@kiit.ac.in" , "Testing Email" , html);
-        res.json({msg:"Email sent successfully"});
+    app.get("/", async (req: Request, res: Response) => {
+        const html = await ejs.renderFile(__dirname + `/lib/views/emails/welcome.ejs`, { name: "Vidyansh Singh" })
+        // await sendEmail("24155442@kiit.ac.in" , "Testing Email" , html);
+        await emailQueue.add(emailQueueName, { to: "siximi9043@bllibl.com", subject: "Testing Email", html: html });
+        res.json({ msg: "Email sent successfully" });
     });
-    app.get("/health", (req:Request, res:Response) => res.json({ status: "ok" }));
+    app.get("/health", (req: Request, res: Response) => res.json({ status: "ok" }));
 
     return app;
 }
