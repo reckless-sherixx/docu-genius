@@ -1,46 +1,98 @@
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
 import { RegisterInput, LoginInput } from '../schemas/auth.schema.js';
+import { renderEmailEjs } from '../lib/helper.js';
+import { emailQueue } from '../queues/email.queue.js';
 
 export class AuthService {
 
     // Register a new user
     static async register(data: RegisterInput) {
-        // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email: data.email }
-        });
+        try {
+            console.log('📝 Starting registration for:', data.email);
+            
+            // Check if user already exists
+            const existingUser = await prisma.user.findUnique({
+                where: { email: data.email }
+            });
 
-        if (existingUser) {
-            throw new Error('User with this email already exists');
-        }
-
-        // Hash password
-        const hashedPassword = await bcrypt.hash(data.password, 10);
-
-        // Create user
-        const user = await prisma.user.create({
-            data: {
-                name: data.name,
-                email: data.email,
-                password: hashedPassword,
-            },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                created_at: true,
+            if (existingUser) {
+                throw new Error('User with this email already exists');
             }
-        });
 
-        // Generate JWT token
-        const token = this.generateToken(user.id.toString());
+            console.log('✅ Email available, hashing password...');
+            
+            // Hash password
+            const hashedPassword = await bcrypt.hash(data.password, 10);
 
-        return {
-            user,
-            token,
-        };
+            console.log('✅ Password hashed, generating verification token...');
+            
+            // Generate email verification token
+            const verificationToken = jwt.sign(
+                { email: data.email },
+                process.env.JWT_SECRET || 'your-secret-key',
+                { expiresIn: '24h' }
+            );
+
+            console.log('✅ Token generated, creating user in database...');
+            
+            // Create user
+            const user = await prisma.user.create({
+                data: {
+                    name: data.name,
+                    email: data.email,
+                    password: hashedPassword,
+                    email_verify_token: verificationToken,
+                    token_send_at: new Date(),
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    email_verified_at: true,
+                    created_at: true,
+                }
+            });
+
+            console.log('✅ User created with ID:', user.id);
+            
+            // Generate verification URL
+            const verificationUrl = `${process.env.BACKEND_URL}/api/auth/verify-email?token=${verificationToken}`;
+            
+            console.log('📧 Rendering email template...');
+            
+            // Render email template
+            const emailBody = await renderEmailEjs("verify-email", { 
+                name: data.name, 
+                verificationUrl: verificationUrl 
+            });
+
+            console.log('✅ Email template rendered, adding to queue...');
+            
+            // Send verification email
+            await emailQueue.add('emailQueueName', { 
+                to: data.email, 
+                subject: "Verify your email - DocGenius", 
+                html: emailBody 
+            });
+
+            console.log('✅ Email added to queue');
+            
+            // Generate JWT token for authentication
+            const authToken = this.generateToken(user.id.toString());
+
+            console.log('✅ Registration complete for:', data.email);
+            
+            return {
+                user,
+                token: authToken,
+                message: 'Registration successful. Please check your email to verify your account.'
+            };
+        } catch (error) {
+            console.error('❌ Registration error:', error);
+            throw error;
+        }
     }
 
     // Login user
@@ -61,6 +113,11 @@ export class AuthService {
             throw new Error('Invalid email or password');
         }
 
+        // Check if email is verified
+        if (!user.email_verified_at) {
+            throw new Error('Please verify your email before logging in');
+        }
+
         // Generate JWT token
         const token = this.generateToken(user.id.toString());
 
@@ -69,6 +126,7 @@ export class AuthService {
                 id: user.id,
                 name: user.name,
                 email: user.email,
+                email_verified_at: user.email_verified_at,
             },
             token,
         };
@@ -77,13 +135,8 @@ export class AuthService {
     // Generate JWT token
     private static generateToken(userId: string): string {
         const secret = process.env.JWT_SECRET || 'your-secret-key';
-        const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
-
-        return jwt.sign(
-            { userId },
-            secret,
-            { expiresIn }
-        );
+        
+        return jwt.sign({ userId }, secret, { expiresIn: '7d' });
     }
 
     // Verify JWT token
@@ -98,6 +151,56 @@ export class AuthService {
         }
     }
 
+    // Verify email
+    static async verifyEmail(token: string) {
+        try {
+            // Verify token
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { email: string };
+            
+            // Find user with matching token
+            const user = await prisma.user.findFirst({
+                where: {
+                    email: decoded.email,
+                    email_verify_token: token,
+                }
+            });
+
+            if (!user) {
+                throw new Error('Invalid or expired verification token');
+            }
+
+            // Check if already verified
+            if (user.email_verified_at) {
+                throw new Error('Email already verified');
+            }
+
+            // Update user - mark email as verified
+            const updatedUser = await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    email_verified_at: new Date(),
+                    email_verify_token: null,
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    email_verified_at: true,
+                }
+            });
+
+            return {
+                message: 'Email verified successfully',
+                user: updatedUser,
+            };
+        } catch (error) {
+            if (error instanceof jwt.JsonWebTokenError) {
+                throw new Error('Invalid or expired verification token');
+            }
+            throw error;
+        }
+    }
+
     // Get user by ID
     static async getUserById(userId: string) {
         const user = await prisma.user.findUnique({
@@ -106,6 +209,7 @@ export class AuthService {
                 id: true,
                 name: true,
                 email: true,
+                email_verified_at: true,
                 created_at: true,
             }
         });

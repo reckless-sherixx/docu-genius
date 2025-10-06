@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('../partials/header') %>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <h1>Verify Your Email Address</h1>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+        <p>Hi <%= name %>,</p>
+        <p>
+          Thank you for signing up for DocGenius! 🎉<br />
+          To complete your registration and start creating secure, professional documents, 
+          please verify your email address.
+        </p>
+        <p>Click the button below to verify your email:</p>
+        <p style="text-align: center">
+          <a href="<%= verificationUrl %>" class="btn">Verify Email</a>
+        </p>
+        <p>
+          Or copy and paste this link into your browser:<br />
+          <a href="<%= verificationUrl %>"><%= verificationUrl %></a>
+        </p>
+        <p>
+          This verification link will expire in 24 hours.
+        </p>
+        <p>
+          If you didn't create an account with DocGenius, you can safely ignore this email.
+        </p>
+        <p>
+          Best regards,<br />
+          The DocGenius Team
+        </p>
+      </div>
+
+      <%- include('../partials/footer') %>
+    </div>
+  </body>
+</html>

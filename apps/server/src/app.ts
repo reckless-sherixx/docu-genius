@@ -28,7 +28,7 @@ export const createApp = (): Express => {
     app.get("/", async (req: Request, res: Response) => {
         const html = await ejs.renderFile(__dirname + `/lib/views/emails/welcome.ejs`, { name: "Vidyansh Singh" })
         // await sendEmail("24155442@kiit.ac.in" , "Testing Email" , html);
-        await emailQueue.add(emailQueueName, { to: "siximi9043@bllibl.com", subject: "Testing Email", html: html });
+        await emailQueue.add(emailQueueName, { to: "24155442@kiit.ac.in", subject: "Testing Email", html: html });
         res.json({ msg: "Email sent successfully" });
     });
     app.get("/health", (req: Request, res: Response) => res.json({ status: "ok" }));

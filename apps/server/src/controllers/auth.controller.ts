@@ -45,6 +45,33 @@ export class AuthController {
         }
     }
 
+    static async verifyEmail(req: Request, res: Response) {
+        try {
+            const { token } = req.query;
+            
+            if (!token) {
+                return res.redirect(`${process.env.FRONTEND_URL}/verify-error`);
+            }
+            
+            // Verify email
+            const result = await AuthService.verifyEmail(token as string);
+            
+            // Success - redirect to frontend success page
+            return res.redirect(`${process.env.FRONTEND_URL}/login`);
+            
+        } catch (error) {
+            console.error('Email verification error:', error);
+            // Error - redirect to frontend error page
+            return res.redirect(`${process.env.FRONTEND_URL}/verify-error`);
+        }
+    }
+
+    // Show verification error page (if rendering on backend)
+    static async verificationError(req: Request, res: Response) {
+        const resendUrl = `${process.env.FRONTEND_URL}/resend-verification`;
+        return res.render("emails/email-verification-error", { resendUrl });
+    }
+
     // Login user
     // static async login(req: Request, res: Response) {
     //     try {

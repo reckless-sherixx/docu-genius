@@ -6,6 +6,8 @@ const router: Router = Router();
 
 // Public routes
 router.post("/register", AuthController.register);
+router.get("/verify-email", AuthController.verifyEmail); 
+router.get("/verify-error", AuthController.verificationError);
 // router.post("/login", AuthController.login);
 
 // Protected routes

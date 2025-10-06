@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('../partials/header') %>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <h1>Email Verification Failed</h1>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+        <p>Hi there,</p>
+        <p>
+          We encountered an issue while trying to verify your email address for DocGenius. ❌
+        </p>
+        <p>
+          <strong>Possible reasons:</strong>
+        </p>
+        <ul>
+          <li>The verification link has expired (links are valid for 24 hours)</li>
+          <li>The verification link has already been used</li>
+          <li>The link may be invalid or corrupted</li>
+        </ul>
+        <p>
+          Don't worry! You can request a new verification email by clicking the button below:
+        </p>
+        <p style="text-align: center">
+          <a href="<%= resendUrl %>" class="btn">Resend Verification Email</a>
+        </p>
+        <p>
+          If you continue to experience issues, please contact our support team at 
+          <a href="mailto:support@docgenius.com">support@docgenius.com</a>.
+        </p>
+        <p>
+          Best regards,<br />
+          The DocGenius Team
+        </p>
+      </div>
+
+      <%- include('../partials/footer') %>
+    </div>
+  </body>
+</html>
