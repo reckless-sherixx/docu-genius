@@ -1,7 +1,7 @@
 "use server"
 
 import { REGISTER_URL } from "@/lib/api-endpoints"
-import axios from "axios"
+import axios, { AxiosError } from "axios"
 
 
 export async function registerAction(prevState: any, formData: FormData) {
@@ -10,11 +10,28 @@ export async function registerAction(prevState: any, formData: FormData) {
             name: formData.get("name"),
             email: formData.get("email"),
             password: formData.get("password"),
-            confirmPassword: formData.get("confirmPassword"),
-        })
-    } catch (error: any) {
+            confirm_password: formData.get("confirm_password"),
+        });
         return {
-            ...prevState, error: error.response?.data?.message || 'An error occurred. Please try again.'
+            status: 200,
+            message:
+                "Account created successfully! Please check your email and verify your email.",
+            errors: {},
+        };
+    } catch (error) {
+        if (error instanceof AxiosError) {
+            if (error.response?.status === 422) {
+                return {
+                    status: 422,
+                    message: error.response?.data?.message,
+                    errors: error.response?.data?.errors,
+                };
+            }
         }
+        return {
+            status: 500,
+            message: "Something went wrong.please try again!",
+            errors: {},
+        };
     }
 }

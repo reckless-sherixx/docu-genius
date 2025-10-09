@@ -1,22 +1,22 @@
-import Login from "@/components/features/auth/Login";
+import Register from "@/components/features/auth/Register";
 import Link from "next/link";
 
-export default function loginPage() {
+export default function page() {
     return (
         <div className="flex justify-center items-center h-screen ">
-            <div className="w-full md:w-[550px] shadow-md rounded-xl py-5 px-10 bg-white">
+            <div className="w-full px-10 md:w-[550px] shadow-md rounded-xl py-5 bg-white">
                 <div>
                     <h1 className="text-4xl text-center font-extrabold bg-gradient-to-r from-pink-400 to-purple-500 text-transparent bg-clip-text">
                         DocuGenius
                     </h1>
-                    <h1 className="text-3xl font-bold">Login</h1>
-                    <p>Welcome back</p>
+                    <h1 className="text-3xl font-bold">Register</h1>
+                    <p>Start clashing now</p>
                 </div>
-                <Login />
+                <Register />
                 <p className="text-center mt-2">
-                    Don't have an account ?{" "}
+                    Already have an account ?{" "}
                     <strong>
-                        <Link href="/register">Register</Link>
+                        <Link href="/login">Login</Link>
                     </strong>
                 </p>
             </div>

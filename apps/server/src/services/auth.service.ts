@@ -20,13 +20,9 @@ export class AuthService {
             if (existingUser) {
                 throw new Error('User with this email already exists');
             }
-
-            console.log('✅ Email available, hashing password...');
             
             // Hash password
             const hashedPassword = await bcrypt.hash(data.password, 10);
-
-            console.log('✅ Password hashed, generating verification token...');
             
             // Generate email verification token
             const verificationToken = jwt.sign(
@@ -35,7 +31,6 @@ export class AuthService {
                 { expiresIn: '24h' }
             );
 
-            console.log('✅ Token generated, creating user in database...');
             
             // Create user
             const user = await prisma.user.create({
@@ -55,12 +50,10 @@ export class AuthService {
                 }
             });
 
-            console.log('✅ User created with ID:', user.id);
             
             // Generate verification URL
             const verificationUrl = `${process.env.BACKEND_URL}/api/auth/verify-email?token=${verificationToken}`;
             
-            console.log('📧 Rendering email template...');
             
             // Render email template
             const emailBody = await renderEmailEjs("verify-email", { 
@@ -68,7 +61,6 @@ export class AuthService {
                 verificationUrl: verificationUrl 
             });
 
-            console.log('✅ Email template rendered, adding to queue...');
             
             // Send verification email
             await emailQueue.add('emailQueueName', { 
@@ -76,13 +68,10 @@ export class AuthService {
                 subject: "Verify your email - DocGenius", 
                 html: emailBody 
             });
-
-            console.log('✅ Email added to queue');
             
             // Generate JWT token for authentication
             const authToken = this.generateToken(user.id.toString());
 
-            console.log('✅ Registration complete for:', data.email);
             
             return {
                 user,
