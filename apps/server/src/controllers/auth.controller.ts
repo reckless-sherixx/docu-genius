@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
-import { registerSchema } from '../schemas/auth.schema.js';
+import { loginSchema, registerSchema } from '../schemas/auth.schema.js';
 import { ZodError } from 'zod';
 
 export class AuthController {
@@ -56,61 +56,57 @@ export class AuthController {
             // Verify email
             const result = await AuthService.verifyEmail(token as string);
             
-            // Success - redirect to frontend success page
             return res.redirect(`${process.env.FRONTEND_URL}/login`);
             
         } catch (error) {
             console.error('Email verification error:', error);
-            // Error - redirect to frontend error page
             return res.redirect(`${process.env.FRONTEND_URL}/verify-error`);
         }
     }
 
-    // Show verification error page (if rendering on backend)
     static async verificationError(req: Request, res: Response) {
         const resendUrl = `${process.env.FRONTEND_URL}/resend-verification`;
         return res.render("emails/email-verification-error", { resendUrl });
     }
 
-    // Login user
-    // static async login(req: Request, res: Response) {
-    //     try {
-    //         // Validate request body
-    //         const validatedData = loginSchema.parse(req.body);
+    static async login(req: Request, res: Response) {
+        try {
+            // Validate request body
+            const validatedData = loginSchema.parse(req.body);
 
-    //         // Login user
-    //         const result = await AuthService.login(validatedData);
+            // Login user
+            const result = await AuthService.login(validatedData);
 
-    //         res.status(200).json({
-    //             success: true,
-    //             message: 'Login successful',
-    //             data: result,
-    //         });
-    //     } catch (error) {
-    //         if (error instanceof ZodError) {
-    //             return res.status(400).json({
-    //                 success: false,
-    //                 message: 'Validation error',
-    //                 errors: error.errors.map(err => ({
-    //                     field: err.path.join('.'),
-    //                     message: err.message,
-    //                 })),
-    //             });
-    //         }
+            res.status(200).json({
+                success: true,
+                message: 'Login successful',
+                data: result,
+            });
+        } catch (error) {
+            if (error instanceof ZodError) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation error',
+                    errors: error.errors.map(err => ({
+                        field: err.path.join('.'),
+                        message: err.message,
+                    })),
+                });
+            }
 
-    //         if (error instanceof Error) {
-    //             return res.status(401).json({
-    //                 success: false,
-    //                 message: error.message,
-    //             });
-    //         }
+            if (error instanceof Error) {
+                return res.status(401).json({
+                    success: false,
+                    message: error.message,
+                });
+            }
 
-    //         res.status(500).json({
-    //             success: false,
-    //             message: 'Internal server error',
-    //         });
-    //     }
-    // }
+            res.status(500).json({
+                success: false,
+                message: 'Internal server error',
+            });
+        }
+    }
 
     // Logout (client-side should remove token)
     static async logout(req: Request, res: Response) {

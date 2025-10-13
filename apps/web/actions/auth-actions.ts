@@ -3,34 +3,60 @@
 import { REGISTER_URL } from "@/lib/api-endpoints"
 import axios, { AxiosError } from "axios"
 
+type FormState = {
+    status: number;
+    message: string;
+    errors: Record<string, string>;
+}
 
-export async function registerAction(prevState: any, formData: FormData) {
+export async function registerAction(prevState: FormState, formData: FormData): Promise<FormState> {
     try {
-        await axios.post(REGISTER_URL, {
+        const payload = {
             name: formData.get("name"),
             email: formData.get("email"),
             password: formData.get("password"),
-            confirm_password: formData.get("confirm_password"),
-        });
+            confirmPassword: formData.get("confirmPassword"),
+        };
+
+        const { data } = await axios.post(REGISTER_URL, payload);
+
         return {
             status: 200,
-            message:
-                "Account created successfully! Please check your email and verify your email.",
+            message: data?.message || "Registration successful! Please check your email to verify your account.",
             errors: {},
         };
     } catch (error) {
         if (error instanceof AxiosError) {
-            if (error.response?.status === 422) {
+            const status = error.response?.status || 500;
+            const responseData = error.response?.data;
+
+            if (status === 400 || status === 422) {
+                const backendErrors = responseData?.errors || [];
+                const errors: Record<string, string> = {};
+
+                if (Array.isArray(backendErrors)) {
+                    backendErrors.forEach((err: any) => {
+                        errors[err.field] = err.message;
+                    });
+                }
+
                 return {
-                    status: 422,
-                    message: error.response?.data?.message,
-                    errors: error.response?.data?.errors,
+                    status,
+                    message: responseData?.message || "Validation failed",
+                    errors,
                 };
             }
+
+            return {
+                status,
+                message: responseData?.message || "Something went wrong",
+                errors: {},
+            };
         }
+
         return {
             status: 500,
-            message: "Something went wrong.please try again!",
+            message: "Network error. Please try again.",
             errors: {},
         };
     }

@@ -8,7 +8,6 @@ async function startServer() {
     try {
         const app = createApp();
         
-        // Initialize email queue worker
         console.log('🔄 Starting email queue worker...');
         emailQueueWorker.on('completed', (job) => {
             console.log(`✅ Email job ${job.id} completed successfully`);

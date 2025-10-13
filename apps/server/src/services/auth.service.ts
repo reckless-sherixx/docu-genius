@@ -163,7 +163,7 @@ export class AuthService {
                 throw new Error('Email already verified');
             }
 
-            // Update user - mark email as verified
+            // Mark email as verified
             const updatedUser = await prisma.user.update({
                 where: { id: user.id },
                 data: {
