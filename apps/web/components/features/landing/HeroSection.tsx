@@ -18,6 +18,7 @@ import { FeatureCards } from "./FeatureCards";
 import { TypewriterEffectSmooth } from "./Typewriter-effect";
 import InsightSection from "./InsightSection";
 import PricingPlanSection from "./PricingPlanSection";
+import FooterSection from "./FooterSection";
 
 export function HeroSection() {
     const navItems = [
@@ -45,7 +46,9 @@ export function HeroSection() {
                     <NavbarLogo />
                     <NavItems items={navItems} />
                     <div className="flex items-center gap-4">
-                        <NavbarButton variant="red">Get Started</NavbarButton>
+                        <NavbarButton variant="red">
+                            <Link href="/login">Get Started</Link>
+                        </NavbarButton>
                     </div>
                 </NavBody>
 
@@ -79,7 +82,7 @@ export function HeroSection() {
                                 variant="red"
                                 className="w-full"
                             >
-                                Get Started
+                                <Link href="/login">Get Started</Link>
                             </NavbarButton>
                         </div>
                     </MobileNavMenu>
@@ -114,7 +117,9 @@ export function HeroSection() {
                 {/* CTA Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4">
                     <Link href="/register">
-                        <NavbarButton variant="red">Get Started</NavbarButton>
+                        <NavbarButton variant="red">
+                            <Link href="/login">Get Started</Link>
+                        </NavbarButton>
                     </Link>
                     <Link href="/about">
                         <NavbarButton variant="black">Learn More</NavbarButton>
@@ -126,11 +131,15 @@ export function HeroSection() {
             <div>
                 <FeatureCards />
             </div>
-            
+
             {/* Insight Section */}
             <InsightSection />
 
-            <PricingPlanSection/>
+            {/* Pricing Plan Section */}
+            <PricingPlanSection />
+
+            {/* Footer Section */}
+            <FooterSection />
 
         </div>
     );

@@ -1,24 +1,24 @@
 import Register from "@/components/features/auth/Register";
-import Link from "next/link";
+import Image from "next/image";
+import Graphics from "@/public/InformationGraphics.png"
 
 export default function page() {
     return (
-        <div className="flex justify-center items-center h-screen ">
-            <div className="w-full px-10 md:w-[550px] shadow-md rounded-xl py-5 bg-white">
-                <div>
-                    <h1 className="text-4xl text-center font-extrabold bg-gradient-to-r from-pink-400 to-purple-500 text-transparent bg-clip-text">
-                        DocuGenius
-                    </h1>
-                    <h1 className="text-3xl font-bold">Register</h1>
-                    <p>Start clashing now</p>
+        <div className="min-h-screen w-full bg-white flex">
+            <div className="hidden lg:flex h-screen sticky top-0 p-12">
+                <div className="relative min-w-lg  rounded-3xl ml-20">
+                    <Image
+                        src={Graphics}
+                        alt="DocuGenius Graphics"
+                        fill
+                        className="object-fill"
+                        priority
+                    />
                 </div>
+            </div>
+
+            <div className="w-full  flex items-center justify-center">
                 <Register />
-                <p className="text-center mt-2">
-                    Already have an account ?{" "}
-                    <strong>
-                        <Link href="/login">Login</Link>
-                    </strong>
-                </p>
             </div>
         </div>
     )

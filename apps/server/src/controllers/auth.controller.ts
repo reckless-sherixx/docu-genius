@@ -108,7 +108,7 @@ export class AuthController {
         }
     }
 
-    // Logout (client-side should remove token)
+    // Logout 
     static async logout(req: Request, res: Response) {
         res.status(200).json({
             success: true,

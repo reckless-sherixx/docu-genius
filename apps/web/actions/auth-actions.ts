@@ -1,6 +1,6 @@
 "use server"
 
-import { REGISTER_URL } from "@/lib/api-endpoints"
+import { LOGIN_URL, REGISTER_URL } from "@/lib/api-endpoints"
 import axios, { AxiosError } from "axios"
 
 type FormState = {
@@ -23,6 +23,57 @@ export async function registerAction(prevState: FormState, formData: FormData): 
         return {
             status: 200,
             message: data?.message || "Registration successful! Please check your email to verify your account.",
+            errors: {},
+        };
+    } catch (error) {
+        if (error instanceof AxiosError) {
+            const status = error.response?.status || 500;
+            const responseData = error.response?.data;
+
+            if (status === 400 || status === 422) {
+                const backendErrors = responseData?.errors || [];
+                const errors: Record<string, string> = {};
+
+                if (Array.isArray(backendErrors)) {
+                    backendErrors.forEach((err: any) => {
+                        errors[err.field] = err.message;
+                    });
+                }
+
+                return {
+                    status,
+                    message: responseData?.message || "Validation failed",
+                    errors,
+                };
+            }
+
+            return {
+                status,
+                message: responseData?.message || "Something went wrong",
+                errors: {},
+            };
+        }
+
+        return {
+            status: 500,
+            message: "Network error. Please try again.",
+            errors: {},
+        };
+    }
+}
+
+export async function loginAction(prevState: FormState, formData: FormData): Promise<FormState> {
+    try {
+        const payload = {
+            email: formData.get("email"),
+            password: formData.get("password"),
+        };
+
+        const { data } = await axios.post(LOGIN_URL, payload);
+
+        return {
+            status: 200,
+            message: data?.message || "Login successful!",
             errors: {},
         };
     } catch (error) {
