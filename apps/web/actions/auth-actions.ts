@@ -1,12 +1,13 @@
 "use server"
 
-import { LOGIN_URL, REGISTER_URL } from "@/lib/api-endpoints"
+import { CHECK_CREDENTIALS_URL, REGISTER_URL } from "@/lib/api-endpoints"
 import axios, { AxiosError } from "axios"
 
-type FormState = {
+export type FormState = {
     status: number;
     message: string;
     errors: Record<string, string>;
+    data?: Record<string, any>;
 }
 
 export async function registerAction(prevState: FormState, formData: FormData): Promise<FormState> {
@@ -69,12 +70,13 @@ export async function loginAction(prevState: FormState, formData: FormData): Pro
             password: formData.get("password"),
         };
 
-        const { data } = await axios.post(LOGIN_URL, payload);
+        const { data } = await axios.post(CHECK_CREDENTIALS_URL, payload);
 
         return {
             status: 200,
             message: data?.message || "Login successful!",
             errors: {},
+            data: payload,
         };
     } catch (error) {
         if (error instanceof AxiosError) {
@@ -95,6 +97,7 @@ export async function loginAction(prevState: FormState, formData: FormData): Pro
                     status,
                     message: responseData?.message || "Validation failed",
                     errors,
+                    data: {},
                 };
             }
 
@@ -102,6 +105,7 @@ export async function loginAction(prevState: FormState, formData: FormData): Pro
                 status,
                 message: responseData?.message || "Something went wrong",
                 errors: {},
+                data:{},
             };
         }
 
@@ -109,6 +113,7 @@ export async function loginAction(prevState: FormState, formData: FormData): Pro
             status: 500,
             message: "Network error. Please try again.",
             errors: {},
+            data:{},
         };
     }
 }

@@ -1,8 +1,9 @@
 import { Urbanist } from "next/font/google"
 
 import "@workspace/ui/globals.css"
-import { Providers } from "@/components/providers"
+import { Providers } from "@/providers/providers"
 import { Toaster } from "@workspace/ui/components/sonner"
+import ClientSessionProvider from "@/providers/ClientSessionProvider"
 
 const fontSans = Urbanist({
   subsets: ["latin"],
@@ -26,8 +27,12 @@ export default function RootLayout({
       <body
         className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased `}
       >
-        <Toaster richColors position="top-right" />
-        <Providers>{children}</Providers>
+        <ClientSessionProvider>
+          <Providers>
+            <Toaster richColors position="top-right" />
+            {children}
+          </Providers>
+        </ClientSessionProvider>
       </body>
     </html>
   )

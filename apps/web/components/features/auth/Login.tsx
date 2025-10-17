@@ -6,22 +6,40 @@ import Link from "next/link";
 import CloudIcon from "@/public/Cloud.png"
 import { IconBrandGoogle, IconBrandFacebook, IconBrandX } from "@tabler/icons-react";
 import Image from "next/image";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { loginAction } from "@/actions/auth-actions";
+import { toast } from "sonner";
+import { signIn } from "next-auth/react";
+
 
 export default function Login() {
   const initialState = {
     message: "",
     status: 0,
-    errors: {}, 
+    errors: {},
+    data: {},
   }
-  const [formState, formAction , isPending] = useActionState(loginAction , initialState)
+  const [formState, formAction, isPending] = useActionState(loginAction, initialState)
+
+  useEffect(() => {
+    if (formState.status === 404 || formState.status === 400) {
+      toast.error(formState.message);
+    } else if (formState.status === 200) {
+      toast.success(formState.message);
+      signIn("credentials", {
+        email: formState.data?.email,
+        password: formState.data?.password,
+        redirect:true,
+        callbackUrl:"/dashboard"
+      })
+    }
+  }, [formState]);
 
   return (
-    <div className="w-full max-w-md mt-8 mr-20">
+    <div className="w-full max-w-md mt-7 mr-20">
       {/* Header */}
       <div className="mb-10">
-          <Image src={CloudIcon} alt="Cloud Icon" className="w-11 h-6 mb-2" />
+        <Image src={CloudIcon} alt="Cloud Icon" className="w-11 h-6 mb-2" />
         <h1 className="text-4xl font-bold text-neutral-900 mb-3">Join DocuGenius</h1>
         <p className="text-sm text-neutral-500 leading-relaxed">
           Access your <span className="text-[rgb(132,42,59)]">Documents, Pdf and Projects</span> anytime,<br />
@@ -36,13 +54,16 @@ export default function Login() {
           <Label htmlFor="email" className="text-sm font-semibold text-neutral-900 mb-2 block">
             Email address
           </Label>
-          <Input 
+          <Input
             id="email"
-            name="email" 
+            name="email"
             type="email"
-            placeholder="" 
-            className="h-12 bg-white border border-neutral-200 rounded-lg mb-5 focus:border-[rgb(132,42,59)] focus:ring-1 focus:ring-[rgb(132,42,59)]"
+            placeholder="Enter your email"
+            className="h-12 bg-white border border-neutral-200 rounded-lg mb-2 focus:border-[rgb(132,42,59)] focus:ring-1 focus:ring-[rgb(132,42,59)]"
           />
+          {formState.errors?.email && (
+            <span className="text-red-500 text-xs mb-2 block">{formState.errors.email}</span>
+          )}
         </div>
 
         {/* Password */}
@@ -52,18 +73,21 @@ export default function Login() {
           </Label>
           <Input
             id="password"
-            type="password"
             name="password"
-            placeholder=""
-            className="h-12 bg-white border border-neutral-200 rounded-lg mb-5 focus:border-[rgb(132,42,59)] focus:ring-1 focus:ring-[rgb(132,42,59)]"
+            type="password"
+            placeholder="Enter your password"
+            className="h-12 bg-white border border-neutral-200 rounded-lg mb-2 focus:border-[rgb(132,42,59)] focus:ring-1 focus:ring-[rgb(132,42,59)]"
           />
+          {formState.errors?.password && (
+            <span className="text-red-500 text-xs mb-2 block">{formState.errors.password}</span>
+          )}
         </div>
 
         {/* Remember Me & Forgot Password */}
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               id="remember"
               className="w-4 h-4 rounded border-neutral-300 bg-white text-[rgb(132,42,59)] focus:ring-[rgb(132,42,59)] focus:ring-2 cursor-pointer accent-[rgb(132,42,59)]"
             />

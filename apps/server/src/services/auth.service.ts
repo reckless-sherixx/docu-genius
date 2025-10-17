@@ -75,7 +75,7 @@ export class AuthService {
             
             return {
                 user,
-                token: authToken,
+                token: `Bearer ${authToken}`,
                 message: 'Registration successful. Please check your email to verify your account.'
             };
         } catch (error) {
@@ -119,6 +119,31 @@ export class AuthService {
             },
             token : `Bearer ${token}`,
         };
+    }
+
+    // Login Check Route
+    static async loginCheck(data: LoginInput){
+        const user = await prisma.user.findUnique({
+            where: { email: data.email }
+        });
+
+        if (!user) {
+            throw new Error('Invalid email or password');
+        }
+
+        // Verify password
+        const isPasswordValid = await bcrypt.compare(data.password, user.password);
+
+        if (!isPasswordValid) {
+            throw new Error('Invalid email or password');
+        }
+
+        // Check if email is verified
+        if (!user.email_verified_at) {
+            throw new Error('Please verify your email before logging in');
+        }
+
+    return {};
     }
 
     // Generate JWT token

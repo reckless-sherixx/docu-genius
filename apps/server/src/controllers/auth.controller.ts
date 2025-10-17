@@ -82,6 +82,7 @@ export class AuthController {
                 message: 'Login successful',
                 data: result,
             });
+
         } catch (error) {
             if (error instanceof ZodError) {
                 return res.status(400).json({
@@ -106,6 +107,57 @@ export class AuthController {
                 message: 'Internal server error',
             });
         }
+    }
+
+    // Login Check Route
+    static async loginCheck(req:Request , res:Response){
+        try {
+            // Validate request body
+            const validatedData = loginSchema.parse(req.body);
+
+            // Login user
+            const result = await AuthService.loginCheck(validatedData);
+
+            res.status(200).json({
+                success: true,
+                message: 'Login successful',
+                data: null,
+            });
+
+        } catch (error) {
+            if (error instanceof ZodError) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation error',
+                    errors: error.errors.map(err => ({
+                        field: err.path.join('.'),
+                        message: err.message,
+                    })),
+                });
+            }
+
+            if (error instanceof Error) {
+                return res.status(401).json({
+                    success: false,
+                    message: error.message,
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Internal server error',
+            });
+        }
+    }
+
+    // Secure Route 
+    static async secureRoute(req:Request, res:Response){
+        console.log('Accessing secure route for user:', req.userId);
+        return res.status(200).json({
+            success: true,
+            message: 'You have accessed a secure route',
+            userId: req.userId,
+        })
     }
 
     // Logout 
