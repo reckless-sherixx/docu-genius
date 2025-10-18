@@ -1,4 +1,5 @@
 import ejs from 'ejs';
+import moment from 'moment';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -6,4 +7,11 @@ export const renderEmailEjs = async (fileName: string, payload: any): Promise<st
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const html: string = await ejs.renderFile(path.join(__dirname, 'views', 'emails', `${fileName}.ejs`), payload);
     return html;
+}
+
+export const checkHourDiff = (date: Date | string): number => {
+    const now = moment();
+    const tokenSendAt = moment(date);
+    const diffInHours = moment.duration(now.diff(tokenSendAt));
+    return diffInHours.asHours();
 }

@@ -1,8 +1,8 @@
 import bcrypt from 'bcrypt';
-import jwt, { SignOptions } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
-import { RegisterInput, LoginInput } from '../schemas/auth.schema.js';
-import { renderEmailEjs } from '../lib/helper.js';
+import { RegisterInput, LoginInput, ForgetPasswordInput, ResetPasswordInput } from '../schemas/auth.schema.js';
+import { checkHourDiff, renderEmailEjs } from '../lib/helper.js';
 import { emailQueue } from '../queues/email.queue.js';
 
 export class AuthService {
@@ -11,7 +11,7 @@ export class AuthService {
     static async register(data: RegisterInput) {
         try {
             console.log('📝 Starting registration for:', data.email);
-            
+
             // Check if user already exists
             const existingUser = await prisma.user.findUnique({
                 where: { email: data.email }
@@ -20,10 +20,10 @@ export class AuthService {
             if (existingUser) {
                 throw new Error('User with this email already exists');
             }
-            
+
             // Hash password
             const hashedPassword = await bcrypt.hash(data.password, 10);
-            
+
             // Generate email verification token
             const verificationToken = jwt.sign(
                 { email: data.email },
@@ -31,7 +31,7 @@ export class AuthService {
                 { expiresIn: '24h' }
             );
 
-            
+
             // Create user
             const user = await prisma.user.create({
                 data: {
@@ -50,29 +50,29 @@ export class AuthService {
                 }
             });
 
-            
+
             // Generate verification URL
             const verificationUrl = `${process.env.BACKEND_URL}/api/auth/verify-email?token=${verificationToken}`;
-            
-            
+
+
             // Render email template
-            const emailBody = await renderEmailEjs("verify-email", { 
-                name: data.name, 
-                verificationUrl: verificationUrl 
+            const emailBody = await renderEmailEjs("verify-email", {
+                name: data.name,
+                verificationUrl: verificationUrl
             });
 
-            
+
             // Send verification email
-            await emailQueue.add('emailQueueName', { 
-                to: data.email, 
-                subject: "Verify your email - DocGenius", 
-                html: emailBody 
+            await emailQueue.add('emailQueueName', {
+                to: data.email,
+                subject: "Verify your email - DocGenius",
+                html: emailBody
             });
-            
+
             // Generate JWT token for authentication
             const authToken = this.generateToken(user.id.toString());
 
-            
+
             return {
                 user,
                 token: `Bearer ${authToken}`,
@@ -117,12 +117,12 @@ export class AuthService {
                 email: user.email,
                 email_verified_at: user.email_verified_at,
             },
-            token : `Bearer ${token}`,
+            token: `Bearer ${token}`,
         };
     }
 
     // Login Check Route
-    static async loginCheck(data: LoginInput){
+    static async loginCheck(data: LoginInput) {
         const user = await prisma.user.findUnique({
             where: { email: data.email }
         });
@@ -143,13 +143,13 @@ export class AuthService {
             throw new Error('Please verify your email before logging in');
         }
 
-    return {};
+        return {};
     }
 
     // Generate JWT token
     private static generateToken(userId: string): string {
         const secret = process.env.JWT_SECRET || 'your-secret-key';
-        
+
         return jwt.sign({ userId }, secret, { expiresIn: '7d' });
     }
 
@@ -170,7 +170,7 @@ export class AuthService {
         try {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { email: string };
-            
+
             // Find user with matching token
             const user = await prisma.user.findFirst({
                 where: {
@@ -211,6 +211,100 @@ export class AuthService {
             if (error instanceof jwt.JsonWebTokenError) {
                 throw new Error('Invalid or expired verification token');
             }
+            throw error;
+        }
+    }
+
+    // Forget Password 
+    static async forgetPassword(data: ForgetPasswordInput) {
+        try {
+            const user = await prisma.user.findUnique({
+                where: { email: data.email },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                }
+            })
+            if (!user) {
+                throw new Error('User with this email does not exist');
+            }
+
+            // Generate password reset token
+            const resetToken = this.generateToken(user.id.toString());
+
+            // Store reset token in database
+            await prisma.user.update({
+                where: { email: data.email },
+                data: {
+                    password_reset_token: resetToken,
+                    token_send_at: new Date(),
+                }
+            })
+
+            // Generate reset URL
+            const resetUrl = `${process.env.FRONTEND_URL}/reset-password?email=${data.email}&token=${resetToken}`;
+
+            const emailBody = await renderEmailEjs("forget-password", {
+                name: user.name,
+                resetUrl: resetUrl,
+            })
+
+            // Send reset email
+            await emailQueue.add('emailQueueName', {
+                to: user.email,
+                subject: "Reset your password - DocGenius",
+                html: emailBody,
+            });
+
+            return {
+                message: 'Password reset email sent successfully',
+            };
+        } catch (error) {
+            console.error('❌ Forget Password error:', error);
+            throw error;
+        }
+    }
+
+    // Reset Password
+    static async resetPassword(data: ResetPasswordInput) {
+        try {
+            const user = await prisma.user.findUnique({
+                where: { email: data.email },
+            })
+            if (!user) {
+                throw new Error('User with this email does not exist');
+            }
+
+            if (!user.password_reset_token) {
+                throw new Error('Invalid or expired password reset token');
+            }
+
+            const hoursDiff = checkHourDiff(user.token_send_at!);
+            if (hoursDiff > 2) {
+                throw new Error('Invalid or expired password reset token');
+            }
+
+            // Verify token
+            const isValid = this.verifyToken(user.password_reset_token);
+
+            if (!isValid) {
+                throw new Error('Invalid or expired password reset token');
+            }
+
+            const hashedPassword = await bcrypt.hash(data.password, 10);
+
+            await prisma.user.update({
+                where: { email: data.email },
+                data: {
+                    password: hashedPassword,
+                    password_reset_token: null,
+                    token_send_at: null,
+                }
+            })
+
+        } catch (error) {
+            console.error('❌ Reset Password error:', error);
             throw error;
         }
     }

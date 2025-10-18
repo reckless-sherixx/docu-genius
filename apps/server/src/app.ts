@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emailQueue, emailQueueName } from './queues/email.queue.js';
 import authRoutes from './routes/auth.route.js';
+import { appLimiter } from './config/rateLimit.config.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +19,8 @@ export const createApp = (): Express => {
     app.use(cors());
     app.use(express.json());
     app.use(express.urlencoded({ extended: false }));
+    
+    app.use(appLimiter);
 
     app.set("view engine", "ejs");
     app.set("views", path.resolve(__dirname, "./lib/views"));

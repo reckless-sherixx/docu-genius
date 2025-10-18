@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
-import { loginSchema, registerSchema } from '../schemas/auth.schema.js';
+import { loginSchema, registerSchema, forgetPasswordSchema, resetPasswordSchema } from '../schemas/auth.schema.js';
 import { ZodError } from 'zod';
 
 export class AuthController {
@@ -48,16 +48,16 @@ export class AuthController {
     static async verifyEmail(req: Request, res: Response) {
         try {
             const { token } = req.query;
-            
+
             if (!token) {
                 return res.redirect(`${process.env.FRONTEND_URL}/verify-error`);
             }
-            
+
             // Verify email
-            const result = await AuthService.verifyEmail(token as string);
-            
+            await AuthService.verifyEmail(token as string);
+
             return res.redirect(`${process.env.FRONTEND_URL}/login`);
-            
+
         } catch (error) {
             console.error('Email verification error:', error);
             return res.redirect(`${process.env.FRONTEND_URL}/verify-error`);
@@ -110,13 +110,13 @@ export class AuthController {
     }
 
     // Login Check Route
-    static async loginCheck(req:Request , res:Response){
+    static async loginCheck(req: Request, res: Response) {
         try {
             // Validate request body
             const validatedData = loginSchema.parse(req.body);
 
             // Login user
-            const result = await AuthService.loginCheck(validatedData);
+            await AuthService.loginCheck(validatedData);
 
             res.status(200).json({
                 success: true,
@@ -150,8 +150,88 @@ export class AuthController {
         }
     }
 
+    // Forget Password
+    static async forgetPassword(req: Request, res: Response) {
+        try {
+            const validatedData = forgetPasswordSchema.parse(req.body);
+
+            await AuthService.forgetPassword(validatedData);
+
+            return res.status(200).json({
+                success: true,
+                message: 'A password reset link has been sent to your email.',
+            });
+
+        } catch (error) {
+            if (error instanceof ZodError) {
+                const errors = error.errors.map(err => ({
+                    field: err.path.join('.'),
+                    message: err.message,
+                }));
+                return res.status(422).json({ 
+                    success: false,
+                    message: "Validation error", 
+                    errors 
+                });
+            }
+
+            if (error instanceof Error) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Internal server error',
+            });
+        }
+    }
+
+    // Reset Password
+    static async resetPassword(req: Request, res: Response) {
+        try {
+            const validatedData = resetPasswordSchema.parse(req.body);
+
+            await AuthService.resetPassword(validatedData);
+
+            res.redirect(`${process.env.FRONTEND_URL}/login`);
+            return res.status(200).json({
+                success: true,
+                message: 'Password reset successful',
+            });
+
+        } catch (error) {
+            if (error instanceof ZodError) {
+                const errors = error.errors.map(err => ({
+                    field: err.path.join('.'),
+                    message: err.message,
+                }));
+                return res.status(422).json({ 
+                    success: false,
+                    message: "Validation error", 
+                    errors 
+                });
+            }
+
+            if (error instanceof Error) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Internal server error',
+            });
+        }
+    }
+
+
     // Secure Route 
-    static async secureRoute(req:Request, res:Response){
+    static async secureRoute(req: Request, res: Response) {
         console.log('Accessing secure route for user:', req.userId);
         return res.status(200).json({
             success: true,
