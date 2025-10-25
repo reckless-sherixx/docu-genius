@@ -30,7 +30,7 @@ export default function Login() {
         email: formState.data?.email,
         password: formState.data?.password,
         redirect:true,
-        callbackUrl:"/dashboard"
+        callbackUrl:"/dashboard"  
       })
     }
   }, [formState]);

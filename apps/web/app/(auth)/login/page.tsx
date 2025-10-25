@@ -1,8 +1,14 @@
 import Login from "@/components/features/auth/Login";
 import Graphics from "@/public/InformationGraphics.png"
+import { getServerSession } from "next-auth";
 import Image from "next/image";
+import { redirect } from "next/navigation";
 
-export default function loginPage() {
+export default async function loginPage() {
+    const session = await getServerSession();
+    if(session){
+        redirect("/dashboard");
+    }
     return (
         <div className="min-h-screen w-full bg-white flex">
             <div className="hidden lg:flex h-screen sticky top-0 p-12">

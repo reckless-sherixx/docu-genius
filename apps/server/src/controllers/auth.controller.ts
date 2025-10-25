@@ -82,7 +82,6 @@ export class AuthController {
                 message: 'Login successful',
                 data: result,
             });
-
         } catch (error) {
             if (error instanceof ZodError) {
                 return res.status(400).json({
@@ -123,7 +122,6 @@ export class AuthController {
                 message: 'Login successful',
                 data: null,
             });
-
         } catch (error) {
             if (error instanceof ZodError) {
                 return res.status(400).json({
@@ -168,10 +166,10 @@ export class AuthController {
                     field: err.path.join('.'),
                     message: err.message,
                 }));
-                return res.status(422).json({ 
+                return res.status(422).json({
                     success: false,
-                    message: "Validation error", 
-                    errors 
+                    message: "Validation error",
+                    errors
                 });
             }
 
@@ -208,10 +206,10 @@ export class AuthController {
                     field: err.path.join('.'),
                     message: err.message,
                 }));
-                return res.status(422).json({ 
+                return res.status(422).json({
                     success: false,
-                    message: "Validation error", 
-                    errors 
+                    message: "Validation error",
+                    errors
                 });
             }
 
