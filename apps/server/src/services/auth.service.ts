@@ -75,7 +75,7 @@ export class AuthService {
 
             return {
                 user,
-                token: `Bearer ${authToken}`,
+                token: authToken,
                 message: 'Registration successful. Please check your email to verify your account.'
             };
         } catch (error) {
@@ -117,7 +117,7 @@ export class AuthService {
                 email: user.email,
                 email_verified_at: user.email_verified_at,
             },
-            token: `Bearer ${token}`,
+            token: token,
         };
     }
 
@@ -312,7 +312,7 @@ export class AuthService {
     // Get user by ID
     static async getUserById(userId: string) {
         const user = await prisma.user.findUnique({
-            where: { id: parseInt(userId) },
+            where: { id: userId },
             select: {
                 id: true,
                 name: true,

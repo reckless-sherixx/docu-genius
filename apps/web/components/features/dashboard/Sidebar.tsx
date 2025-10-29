@@ -22,7 +22,7 @@ export function SidebarDemo() {
   const mainLinks = [
     {
       label: "Dashboard",
-      href: "#",
+      href: "/dashboard",
       icon: (
         <IconLayoutDashboard className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
@@ -46,7 +46,7 @@ export function SidebarDemo() {
     },
   ];
 
-  const supportLinks = [
+  const organizationLinks = [
     {
       label: "Shared Documents",
       href: "#",
@@ -147,7 +147,7 @@ export function SidebarDemo() {
                 SUPPORT
               </p>
               <div className="flex flex-col">
-                {supportLinks.map((link, idx) => (
+                {organizationLinks.map((link, idx) => (
                   <div key={idx} className="relative">
                     <SidebarLink link={link} />
                     {link.badge && (

@@ -13,14 +13,75 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
 model User {
-  id                   Int       @id @default(autoincrement())
-  name                 String    @db.VarChar(191)
-  email                String    @unique
-  password             String
-  password_reset_token String?
-  token_send_at        DateTime?
-  email_verified_at    DateTime?
-  email_verify_token   String?
-  created_at           DateTime  @default(now())
+  id                      String               @id @default(uuid())
+  name                    String               @db.VarChar(191)
+  email                   String               @unique
+  password                String
+  password_reset_token    String?
+  token_send_at           DateTime?
+  email_verified_at       DateTime?
+  email_verify_token      String?
+  created_at              DateTime             @default(now())
+  ownedOrganizations      Organization[]       @relation("OrganizationOwner")
+  organizationMemberships OrganizationMember[]
+  sentInvites             OrganizationInvite[] @relation("InviteSender")
+}
+
+model Organization {
+  id                   String               @id @default(uuid())
+  name                 String               @db.VarChar(191)
+  description          String?
+  organization_pin     Int
+  organization_head_id String
+  organization_head    User                 @relation("OrganizationOwner", fields: [organization_head_id], references: [id], onDelete: Cascade)
+  created_at           DateTime             @default(now())
+  updated_at           DateTime             @updatedAt
+  members              OrganizationMember[]
+  invites              OrganizationInvite[]
+}
+
+model OrganizationMember {
+  id              String       @id @default(uuid())
+  organization_id String
+  user_id         String
+  role            MemberRole   @default(MEMBER)
+  joined_at       DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, user_id])
+  @@index([user_id])
+  @@index([organization_id])
+}
+
+model OrganizationInvite {
+  id               String           @id @default(uuid())
+  organization_id  String
+  email            String
+  invited_by       String
+  role             MemberRole       @default(MEMBER)
+  invitation_token String           @unique
+  status           InvitationStatus @default(PENDING)
+  expires_at       DateTime
+  created_at       DateTime         @default(now())
+  organization     Organization     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  inviter          User             @relation("InviteSender", fields: [invited_by], references: [id], onDelete: Cascade)
+
+  @@index([invitation_token])
+  @@index([email])
+  @@index([organization_id])
 }

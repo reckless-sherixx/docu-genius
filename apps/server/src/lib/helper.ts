@@ -15,3 +15,12 @@ export const checkHourDiff = (date: Date | string): number => {
     const diffInHours = moment.duration(now.diff(tokenSendAt));
     return diffInHours.asHours();
 }
+
+export const generateToken = (length: number = 32): string => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < length; i++) {
+        token += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return token;
+}

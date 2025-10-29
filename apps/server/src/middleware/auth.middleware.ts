@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
 
-// Extend Express Request type to include userId
+// Extend Express Request type to include user and userId
 declare global {
     namespace Express {
         interface Request {
             userId?: string;
+            user?: {
+                id: string;
+                email: string;
+                name: string;
+            };
         }
     }
 }
@@ -31,8 +36,23 @@ export const authMiddleware = async (
         // Verify token
         const decoded = AuthService.verifyToken(token);
 
-        // Attach userId to request
+        // Get user details
+        const user = await AuthService.getUserById(decoded.userId);
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        // Attach userId and user to request
         req.userId = decoded.userId;
+        req.user = {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+        };
 
         next();
     } catch (error) {
