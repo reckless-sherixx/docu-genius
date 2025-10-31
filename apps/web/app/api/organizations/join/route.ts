@@ -1,16 +1,24 @@
+import { ORGANIZATIONS_JOIN_URL } from "@/lib/api-endpoints";
 import { NextRequest, NextResponse } from "next/server";
-import Env from "@/lib/env";
 
 export async function POST(request: NextRequest) {
   try {
     const token = request.headers.get("authorization");
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "No token provided" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     
-    const response = await fetch(`${Env.BACKEND_URL}/api/organizations/join`, {
+    const response = await fetch(ORGANIZATIONS_JOIN_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token && { Authorization: token }),
+        Authorization: token,
       },
       body: JSON.stringify(body),
     });
@@ -19,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, { status: response.status });
   } catch (error: any) {
     return NextResponse.json(
-      { status: 500, message: error.message || "Internal server error" },
+      { success: false, message: error.message || "Internal server error" },
       { status: 500 }
     );
   }

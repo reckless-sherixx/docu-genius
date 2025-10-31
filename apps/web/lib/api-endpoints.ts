@@ -9,6 +9,5 @@ export const VERIFY_EMAIL_URL = `${BASE_URL}/auth/verify-email`;
 export const FORGET_PASSWORD_URL = `${BASE_URL}/auth/forget-password`;
 export const RESET_PASSWORD_URL = `${BASE_URL}/auth/reset-password`;
 
-export const API_ENDPOINTS = {
-  ORGANIZATIONS: `${BASE_URL}/organizations`,
-};
+export const ORGANIZATIONS_URL = `${BASE_URL}/v1/organization`;
+export const ORGANIZATIONS_JOIN_URL = `${BASE_URL}/v1/organization/join`;

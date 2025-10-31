@@ -28,7 +28,7 @@ export const createApp = (): Express => {
 
     // Routes
     app.use("/api/auth", authRoutes);
-    app.use("/api/organizations", organizationRoutes);
+    app.use("/api/v1/organization", organizationRoutes);
 
     app.get("/", async (req: Request, res: Response) => {
         const html = await ejs.renderFile(__dirname + `/lib/views/emails/welcome.ejs`, { name: "Vidyansh Singh" })

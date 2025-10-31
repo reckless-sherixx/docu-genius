@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconBuilding, IconX } from "@tabler/icons-react";
-import { getUserOrganizations } from "@/actions/organization-actions";
 import { useSession } from "next-auth/react";
 
 export default function OrganizationPrompt() {
@@ -13,8 +12,10 @@ export default function OrganizationPrompt() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (status !== "loading") {
+    if (status !== "loading" && session) {
       checkOrganization();
+    } else if (status === "unauthenticated") {
+      setLoading(false);
     }
   }, [status, session]);
 
@@ -25,13 +26,27 @@ export default function OrganizationPrompt() {
       return;
     }
 
-    const { organizations } = await getUserOrganizations(token);
-    
-    if (organizations.length === 0) {
-      setShow(true);
+    try {
+      const response = await fetch("/api/organizations", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        if (!data.data || data.data.length === 0) {
+          setShow(true);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching organizations:", error);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const handleJoinOrganization = () => {
@@ -44,7 +59,7 @@ export default function OrganizationPrompt() {
 
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
-      <div className="bg-gradient-to-r from-[#8b3a62] to-[#9d4572] rounded-lg p-4 shadow-lg border border-[#a0527d]">
+      <div className="bg-gradient-to-r from-[rgb(132,42,59)] to-[rgb(132,42,59)] rounded-lg p-4 shadow-lg border border-[#a0527d]">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-white/20 p-2 rounded-lg">
@@ -62,7 +77,7 @@ export default function OrganizationPrompt() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleJoinOrganization}
-              className="bg-white text-[#8b3a62] px-4 py-2 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors whitespace-nowrap"
+              className="bg-white text-[rgb(132,42,59)] px-4 py-2 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors whitespace-nowrap"
             >
               Get Started
             </button>
