@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { Sidebar, SidebarBody, SidebarLink } from "./SidebarComponent";
+import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "./SidebarComponent";
 import {
   IconArrowLeft,
   IconSettings,
@@ -18,7 +18,7 @@ import DashboardContent from "./DashboardContent";
 import Image from "next/image";
 import Link from "next/link";
 
-export function SidebarDemo() {
+export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const mainLinks = [
     {
       label: "Dashboard",
@@ -99,94 +99,159 @@ export function SidebarDemo() {
 
   return (
     <div className="flex w-full h-screen overflow-hidden bg-white flex-col sm:flex-row">
-      <Sidebar open={open} setOpen={setOpen} animate={false}>
+      <Sidebar open={open} setOpen={setOpen} animate={true}>
         <SidebarBody className="justify-between gap-10 bg-white p-0">
-          <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
-            <div className="bg-[#3a3a3a] px-5 py-6 mb-5 relative">
-              <Logo />
-              <Link href="#" className="absolute right-5 top-1/2 -translate-y-1/2">
-                <Image
-                  src={Arrow}
-                  alt="Arrow Icon"
-                  className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity"
-                />
-              </Link>
-            </div>
-
-            {/* Create New Template Button */}
-            <div className="px-4 mb-6 sm:mb-8">
-              <button className="w-full flex items-center justify-center gap-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white font-medium py-2 px-3 sm:px-4 rounded-lg transition text-sm">
-                <IconPlus className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="hidden sm:inline">Create New Template</span>
-                <span className="sm:hidden">Create</span>
-              </button>
-            </div>
-
-            {/* Dashboard Section */}
-            <div className="flex flex-col px-4">
-              {mainLinks.map((link, idx) => (
-                <SidebarLink key={idx} link={link} />
-              ))}
-            </div>
-
-            {/* Analytics Section */}
-            <div className="mt-4 px-4 sm:mt-6">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3">
-                ANALYTICS
-              </p>
-              <div className="flex flex-col ">
-                {analyticsLinks.map((link, idx) => (
-                  <SidebarLink key={idx} link={link} />
-                ))}
-              </div>
-            </div>
-
-            {/* Support Section */}
-            <div className="mt-4 px-4 sm:mt-6">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3">
-                SUPPORT
-              </p>
-              <div className="flex flex-col">
-                {organizationLinks.map((link, idx) => (
-                  <div key={idx} className="relative">
-                    <SidebarLink link={link} />
-                    {link.badge && (
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                        {link.badge}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Personalise Section */}
-            <div className="mt-35 px-4 sm:mt-40">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3">
-                PERSONALISE
-              </p>
-              <div className="flex flex-col">
-                {personaliseLinks.map((link, idx) => (
-                  <SidebarLink key={idx} link={link} />
-                ))}
-              </div>
-            </div>
-          </div>
+          <SidebarContent
+            mainLinks={mainLinks}
+            analyticsLinks={analyticsLinks}
+            organizationLinks={organizationLinks}
+            personaliseLinks={personaliseLinks}
+          />
         </SidebarBody>
       </Sidebar>
-      <DashboardContent />
+      <div className="flex-1 overflow-auto">
+        {children || <DashboardContent />}
+      </div>
     </div>
   );
 }
 
+const SidebarContent = ({
+  mainLinks,
+  analyticsLinks,
+  organizationLinks,
+  personaliseLinks,
+}: {
+  mainLinks: any[];
+  analyticsLinks: any[];
+  organizationLinks: any[];
+  personaliseLinks: any[];
+}) => {
+  const { open, animate } = useSidebar();
+
+  return (
+    <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
+      <div className="bg-[#3a3a3a] py-6 mb-5 relative flex items-center justify-center">
+        <Logo />
+        <motion.div
+          animate={{
+            display: animate ? (open ? "block" : "none") : "block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+          className="absolute right-5 top-1/2 -translate-y-1/2"
+        >
+        </motion.div>
+      </div>
+
+      {/* Create New Template Button */}
+      <div className="px-2 mb-6 sm:mb-8">
+        <button className="w-full flex items-center justify-center gap-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white font-medium py-2 px-3 sm:px-4 rounded-lg transition text-sm">
+          <IconPlus className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+          <motion.span
+            animate={{
+              display: animate ? (open ? "inline-block" : "none") : "inline-block",
+              opacity: animate ? (open ? 1 : 0) : 1,
+            }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="whitespace-nowrap"
+          >
+            Create New Template
+          </motion.span>
+        </button>
+      </div>
+
+      {/* Dashboard Section */}
+      <div className="flex flex-col px-4">
+        {mainLinks.map((link, idx) => (
+          <SidebarLink key={idx} link={link} />
+        ))}
+      </div>
+
+      {/* Analytics Section */}
+      <div className="mt-4 px-4 sm:mt-6">
+        <motion.p
+          animate={{
+            display: animate ? (open ? "block" : "none") : "block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+          className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3"
+        >
+          ANALYTICS
+        </motion.p>
+        <div className="flex flex-col ">
+          {analyticsLinks.map((link, idx) => (
+            <SidebarLink key={idx} link={link} />
+          ))}
+        </div>
+      </div>
+
+      {/* Support Section */}
+      <div className="mt-4 px-4 sm:mt-6">
+        <motion.p
+          animate={{
+            display: animate ? (open ? "block" : "none") : "block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+          className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3"
+        >
+          SUPPORT
+        </motion.p>
+        <div className="flex flex-col">
+          {organizationLinks.map((link, idx) => (
+            <div key={idx} className="relative">
+              <SidebarLink link={link} />
+              {link.badge && (
+                <motion.span
+                  animate={{
+                    display: animate ? (open ? "flex" : "none") : "flex",
+                    opacity: animate ? (open ? 1 : 0) : 1,
+                  }}
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 items-center justify-center"
+                >
+                  {link.badge}
+                </motion.span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Personalise Section */}
+      <div className="mt-35 px-4 sm:mt-40">
+        <motion.p
+          animate={{
+            display: animate ? (open ? "block" : "none") : "block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+          className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3"
+        >
+          PERSONALISE
+        </motion.p>
+        <div className="flex flex-col">
+          {personaliseLinks.map((link, idx) => (
+            <SidebarLink key={idx} link={link} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Logo = () => {
+  const { open, animate } = useSidebar();
+
   return (
     <a
       href="#"
-      className="relative z-20 flex items-center gap-3"
+      className="relative z-20 flex items-center justify-center gap-3 w-full px-3"
     >
       {/* Cloud Icon */}
-      <div className="shrink-0">
+      <div className="shrink-0 flex items-center justify-center">
         <Image
           src={CloudIcon}
           alt="Cloud Icon"
@@ -196,9 +261,12 @@ export const Logo = () => {
       
       {/* DocuGenius Text */}
       <motion.span
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="font-medium whitespace-pre text-white text-2xl"
+        animate={{
+          display: animate ? (open ? "inline-block" : "none") : "inline-block",
+          opacity: animate ? (open ? 1 : 0) : 1,
+        }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
+        className="font-medium whitespace-nowrap text-white text-2xl"
       >
         DocuGenius
       </motion.span>

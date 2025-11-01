@@ -85,3 +85,12 @@ model OrganizationInvite {
   @@index([email])
   @@index([organization_id])
 }
+
+model Template {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(191)
+  description String?
+  pdf         String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}

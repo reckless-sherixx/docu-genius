@@ -1,10 +1,10 @@
 "use client"
 
 import React from 'react'
-import { SidebarDemo } from './Sidebar'
+import DashboardContent from './DashboardContent'
 
 export default function Dashboard() {
   return (
-    <SidebarDemo />
+    <DashboardContent />
   )
 }
