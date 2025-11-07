@@ -13,10 +13,10 @@ import {
 } from "@tabler/icons-react";
 import { motion } from "motion/react";
 import CloudIcon from "@/public/CloudWhite.png";
-import Arrow from '@/public/arrow.png'
 import DashboardContent from "./DashboardContent";
 import Image from "next/image";
 import Link from "next/link";
+import { Button } from "@workspace/ui/components/button";
 
 export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const mainLinks = [
@@ -31,15 +31,15 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
 
   const analyticsLinks = [
     {
-      label: "Performance",
-      href: "#",
+      label: "Templates",
+      href: "/dashboard/templates",
       icon: (
         <IconTrendingUp className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
     {
-      label: "Documents",
-      href: "#",
+      label: "Upload Template",
+      href: "/dashboard/template",
       icon: (
         <IconFileText className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
@@ -146,19 +146,21 @@ const SidebarContent = ({
 
       {/* Create New Template Button */}
       <div className="px-2 mb-6 sm:mb-8">
-        <button className="w-full flex items-center justify-center gap-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white font-medium py-2 px-3 sm:px-4 rounded-lg transition text-sm">
-          <IconPlus className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
-          <motion.span
-            animate={{
-              display: animate ? (open ? "inline-block" : "none") : "inline-block",
-              opacity: animate ? (open ? 1 : 0) : 1,
-            }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="whitespace-nowrap"
-          >
-            Create New Template
-          </motion.span>
-        </button>
+        <Button asChild className="w-full flex items-center justify-center gap-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white font-medium py-2 px-3 sm:px-4 rounded-lg transition text-sm">
+          <Link href="/dashboard/create-template">
+            <IconPlus className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+            <motion.span
+              animate={{
+                display: animate ? (open ? "inline-block" : "none") : "inline-block",
+                opacity: animate ? (open ? 1 : 0) : 1,
+              }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="whitespace-nowrap"
+            >
+              Create New Template
+            </motion.span>
+          </Link>
+        </Button>
       </div>
 
       {/* Dashboard Section */}
@@ -238,7 +240,7 @@ const SidebarContent = ({
           ))}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
@@ -258,7 +260,7 @@ export const Logo = () => {
           className="h-7 w-11"
         />
       </div>
-      
+
       {/* DocuGenius Text */}
       <motion.span
         animate={{

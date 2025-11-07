@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { createOrganizationSchema } from "../schemas/organization.schema.js";
 import { OrganizationService } from "../services/organization.service.js";
-import prisma from "../lib/prisma.js";
+
 
 export class OrganizationController {
     static async getUserOrganizations(req: Request, res: Response) {

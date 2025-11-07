@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
 
+// Extend Express Request type to include user and userId
 declare global {
     namespace Express {
         interface Request {
@@ -20,17 +21,25 @@ export const authMiddleware = async (
     next: NextFunction
 ) => {
     try {
-        // Get token from Authorization header
+        // Support both Authorization header and query parameter token
+        // Query parameter is needed for PDF.js worker which doesn't pass headers properly
+        let token: string | undefined;
+        
         const authHeader = req.headers.authorization;
+        const queryToken = req.query.token as string;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        } else if (queryToken) {
+            token = queryToken;
+        }
+
+        if (!token) {
             return res.status(401).json({
                 success: false,
                 message: 'No token provided',
             });
-        }
-
-        const token = authHeader.substring(7); 
+        } 
 
         // Verify token
         const decoded = AuthService.verifyToken(token);
@@ -44,6 +53,7 @@ export const authMiddleware = async (
                 message: 'User not found',
             });
         }
+
         req.userId = decoded.userId;
         req.user = {
             id: user.id,

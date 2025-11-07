@@ -8,6 +8,8 @@ import { fileURLToPath } from 'url';
 import { emailQueue, emailQueueName } from './queues/email.queue.js';
 import authRoutes from './routes/auth.route.js';
 import organizationRoutes from './routes/organization.route.js';
+import templateRoutes from './routes/template-v2.route.js';
+import pdfEditorRoutes from './routes/pdf-editor.route.js';
 import { appLimiter } from './config/rateLimit.config.js';
 
 
@@ -29,6 +31,8 @@ export const createApp = (): Express => {
     // Routes
     app.use("/api/auth", authRoutes);
     app.use("/api/v1/organization", organizationRoutes);
+    app.use("/api/templates", templateRoutes);
+    app.use("/api/pdf-editor", pdfEditorRoutes); 
 
     app.get("/", async (req: Request, res: Response) => {
         const html = await ejs.renderFile(__dirname + `/lib/views/emails/welcome.ejs`, { name: "Vidyansh Singh" })

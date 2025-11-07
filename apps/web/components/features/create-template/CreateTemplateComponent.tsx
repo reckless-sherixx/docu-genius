@@ -18,7 +18,6 @@ import {
     IconH3,
     IconPhoto,
     IconLink,
-    IconTable,
     IconQuote,
     IconCode,
     IconSeparator,

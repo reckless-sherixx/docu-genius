@@ -1,4 +1,4 @@
-import { CreateTemplateComponent } from "@/components/features/template/CreateTemplateComponent";
+import { CreateTemplateComponent } from "@/components/features/create-template/CreateTemplateComponent";
 
 
 export default function page() {
