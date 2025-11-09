@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@tabler/icons-react": "^3.35.0",
@@ -27,9 +28,11 @@
     "@tiptap/extension-underline": "^3.10.1",
     "@tiptap/react": "^3.10.1",
     "@tiptap/starter-kit": "^3.10.1",
+    "@types/fabric": "^5.3.10",
     "@workspace/ui": "workspace:*",
     "axios": "^1.12.2",
     "clsx": "^2.1.1",
+    "fabric": "^6.9.0",
     "i": "^0.3.7",
     "lucide-react": "^0.475.0",
     "motion": "^12.23.24",

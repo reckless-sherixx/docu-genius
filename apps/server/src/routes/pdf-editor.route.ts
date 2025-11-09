@@ -4,27 +4,30 @@ import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router: Router = Router();
 
-// Open PDF for editing (with OCR if scanned)
+router.get('/:id/open', authMiddleware, (req, res) =>
+  pdfEditorController.openForEditing(req, res)
+);
+
 router.get('/:id/edit', authMiddleware, (req, res) =>
   pdfEditorController.openForEditing(req, res)
 );
 
-// Download PDF through backend proxy (avoids CORS)
 router.get('/:id/download', authMiddleware, (req, res) =>
   pdfEditorController.downloadPDF(req, res)
 );
 
-// Save edited PDF (expires in 2 hours)
 router.post('/save', authMiddleware, (req, res) =>
   pdfEditorController.saveEditedPDF(req, res)
 );
 
-// Save editable PDF (Sejda-style with text manipulation)
+router.post('/prepare-editable', authMiddleware, (req, res) =>
+  pdfEditorController.prepareEditablePDF(req, res)
+);
+
 router.post('/save-editable', authMiddleware, (req, res) =>
   pdfEditorController.saveEditablePDF(req, res)
 );
 
-// PDF editing operations
 router.post('/add-text', authMiddleware, (req, res) =>
   pdfEditorController.addText(req, res)
 );

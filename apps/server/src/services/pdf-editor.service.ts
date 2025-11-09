@@ -4,12 +4,87 @@ import { PDFDocument, rgb, StandardFonts, degrees, PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import { fileCleanupQueue } from '../queues/file-cleanup.queue.js';
+import { NLPService, EntityType } from './nlp.service.js';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const prisma = new PrismaClient();
 
 export class PDFEditorService {
+
+    async prepareEditablePDFWithoutText(
+        templateId: string,
+        organizationId: string
+    ): Promise<any> {
+        try {
+            console.log('🔨 Creating PDF without text layer for editing:', templateId);
+
+            const template = await prisma.template.findUnique({
+                where: { id: templateId },
+            });
+
+            if (!template || !template.s3_key) {
+                throw new Error('Template not found or missing S3 key');
+            }
+
+            // Download original PDF
+            const originalBuffer = await s3Service.downloadFileAsBuffer(template.s3_key);
+            
+            // Load original PDF
+            const originalDoc = await PDFDocument.load(originalBuffer);
+            const originalPages = originalDoc.getPages();
+            
+            // Create new PDF with only graphics (no text)
+            const newPdfDoc = await PDFDocument.create();
+            
+            console.log('📄 Converting pages to images (removing text layer)...');
+            
+            for (let i = 0; i < originalPages.length; i++) {
+                const originalPage = originalPages[i];
+                if (!originalPage) continue;
+                
+                const { width, height } = originalPage.getSize();
+                
+                // Create new blank page
+                const newPage = newPdfDoc.addPage([width, height]);
+                
+                // Draw white background
+                newPage.drawRectangle({
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                    color: rgb(1, 1, 1),
+                });
+                
+                console.log(`✅ Page ${i + 1} prepared (blank for text overlay)`);
+            }
+            
+            // Save the new PDF
+            const pdfBytes = await newPdfDoc.save();
+            const pdfBuffer = Buffer.from(pdfBytes);
+            
+            // Upload to S3 with temporary key
+            const timestamp = Date.now();
+            const s3Key = `templates/${organizationId}/editable-${timestamp}.pdf`;
+            
+            await s3Service.uploadFile(s3Key, pdfBuffer, 'application/pdf');
+            
+            // Generate presigned URL (2 hour expiry)
+            const editablePdfUrl = await s3Service.generatePresignedDownloadUrl(s3Key, 7200);
+            
+            console.log('✅ Editable PDF created without text layer');
+            
+            return {
+                editablePdfUrl,
+                s3Key,
+            };
+        } catch (error) {
+            console.error('❌ Error creating editable PDF without text:', error);
+            throw error;
+        }
+    }
+
     async preparePDFForEditing(templateId: string): Promise<any> {
         try {
             console.log('📝 Preparing PDF for editing:', templateId);
@@ -39,10 +114,6 @@ export class PDFEditorService {
         }
     }
 
-    /**
-     * Process text-based PDF
-     * Extract text content and positions for editing
-     */
     private async processTextPDF(pdfBuffer: Buffer, templateId: string): Promise<any> {
         console.log('📄 Processing text-based PDF');
 
@@ -54,6 +125,10 @@ export class PDFEditorService {
             // Extract text with pdf-parse (using createRequire for CommonJS module)
             const parse = require('pdf-parse');
             const parsedPdf = await parse(pdfBuffer);
+
+            // Apply NLP to extract entities and placeholders
+            console.log('🧠 Applying NLP to extract entities and placeholders...');
+            const nlpResult = await NLPService.extractEntities(parsedPdf.text);
 
             const pdfData = {
                 templateId,
@@ -67,9 +142,12 @@ export class PDFEditorService {
                 extractedText: parsedPdf.text,
                 editable: true,
                 ocrApplied: false,
+                nlpEntities: nlpResult.entities,
+                explicitPlaceholders: nlpResult.placeholders,
+                placeholderSuggestions: nlpResult.suggestions,
             };
 
-            console.log(`✅ Processed ${pages.length} pages`);
+            console.log(`✅ Processed ${pages.length} pages with ${nlpResult.entities.length} entities`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing text PDF:', error);
@@ -103,6 +181,10 @@ export class PDFEditorService {
                 ocrApplied = true;
             }
 
+            // Apply NLP to extract entities and placeholders
+            console.log('🧠 Applying NLP to extract entities and placeholders...');
+            const nlpResult = await NLPService.extractEntities(ocrText);
+
             const pdfData = {
                 templateId,
                 type: 'scanned',
@@ -115,9 +197,12 @@ export class PDFEditorService {
                 extractedText: ocrText,
                 editable: true,
                 ocrApplied,
+                nlpEntities: nlpResult.entities,
+                explicitPlaceholders: nlpResult.placeholders,
+                placeholderSuggestions: nlpResult.suggestions,
             };
 
-            console.log(`✅ Processed scanned PDF with ${ocrApplied ? 'OCR' : 'existing text'}`);
+            console.log(`✅ Processed scanned PDF with ${ocrApplied ? 'OCR' : 'existing text'} and ${nlpResult.entities.length} entities`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing scanned PDF:', error);
@@ -360,8 +445,47 @@ export class PDFEditorService {
 
     private async addTextElement(pdfDoc: PDFDocument, page: PDFPage, element: any): Promise<void> {
         try {
-            // Embed font
-            const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            console.log(`📝 Adding text: "${element.text}" with font: ${element.fontFamily}, bold: ${element.isBold}, italic: ${element.isItalic}`);
+            
+            // Enhanced font selection based on formatting
+            let font: any;
+            const fontFamily = element.fontFamily?.toLowerCase() || 'arial';
+            const isBold = element.isBold === true;
+            const isItalic = element.isItalic === true;
+
+            // Map font families to StandardFonts with bold/italic support
+            if (fontFamily.includes('times')) {
+                if (isBold && isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+                } else if (isBold) {
+                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+                } else if (isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+                } else {
+                    font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+                }
+            } else if (fontFamily.includes('courier')) {
+                if (isBold && isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.CourierBoldOblique);
+                } else if (isBold) {
+                    font = await pdfDoc.embedFont(StandardFonts.CourierBold);
+                } else if (isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.CourierOblique);
+                } else {
+                    font = await pdfDoc.embedFont(StandardFonts.Courier);
+                }
+            } else {
+                // Default to Helvetica (Arial equivalent)
+                if (isBold && isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+                } else if (isBold) {
+                    font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+                } else if (isItalic) {
+                    font = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+                } else {
+                    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+                }
+            }
             
             // Frontend extracts at scale 2, so we need to divide by 2
             const fontSize = element.fontSize / 2;
@@ -371,14 +495,38 @@ export class PDFEditorService {
             const x = element.x / 2;
             const y = pageHeight - (element.y / 2) - fontSize;
 
+            // Handle text alignment
+            let adjustedX = x;
+            if (element.textAlign === 'center') {
+                const textWidth = font.widthOfTextAtSize(element.text, fontSize);
+                adjustedX = x + (element.width / 4) - (textWidth / 2);
+            } else if (element.textAlign === 'right') {
+                const textWidth = font.widthOfTextAtSize(element.text, fontSize);
+                adjustedX = x + (element.width / 2) - textWidth;
+            }
+
             // Draw text on NEW PDF
             page.drawText(element.text, {
-                x,
+                x: adjustedX,
                 y,
                 size: fontSize,
                 font,
                 color: rgb(color.r, color.g, color.b),
+                rotate: degrees(element.angle || 0),
             });
+
+            // Draw underline if needed
+            if (element.isUnderline) {
+                const textWidth = font.widthOfTextAtSize(element.text, fontSize);
+                page.drawLine({
+                    start: { x: adjustedX, y: y - 2 },
+                    end: { x: adjustedX + textWidth, y: y - 2 },
+                    thickness: fontSize * 0.05,
+                    color: rgb(color.r, color.g, color.b),
+                });
+            }
+
+            console.log(`✅ Text added successfully at (${adjustedX.toFixed(2)}, ${y.toFixed(2)})`);
         } catch (error) {
             console.error('❌ Error adding text to new PDF:', error);
             // Continue with other elements even if one fails

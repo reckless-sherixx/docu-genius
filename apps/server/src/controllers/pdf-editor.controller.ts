@@ -4,10 +4,6 @@ import { pdfEditorService } from '../services/pdf-editor.service.js';
 import { s3Service } from '../services/s3.service.js';
 
 export class PDFEditorController {
-  /**
-   * Get PDF data for editing
-   * Prepares PDF with OCR if needed
-   */
   async openForEditing(req: Request, res: Response): Promise<any> {
     try {
       const { id } = req.params;
@@ -209,6 +205,44 @@ export class PDFEditorController {
       return res.status(500).json({
         success: false,
         message: 'Failed to save editable PDF',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Prepare editable PDF: Create new PDF with blank pages (no text layer)
+   */
+  async prepareEditablePDF(req: Request, res: Response): Promise<any> {
+    try {
+      const { templateId } = req.body;
+      const organizationId = (req as any).user.organizationId;
+
+      if (!templateId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template ID is required',
+        });
+      }
+
+      console.log(`🔨 Preparing editable PDF for template: ${templateId}`);
+
+      // Create a new PDF without text layer using the service
+      const result = await pdfEditorService.prepareEditablePDFWithoutText(
+        templateId,
+        organizationId
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Editable PDF prepared successfully',
+        editablePdfUrl: result.editablePdfUrl,
+      });
+    } catch (error) {
+      console.error('❌ Error preparing editable PDF:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to prepare editable PDF',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }

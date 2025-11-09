@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import EditablePDFEditor from '@/components/features/pdf/EditablePDFEditor';
+import FabricPDFEditor from '@/components/features/pdf/FabricPDFEditor';
 import { Loader2 } from 'lucide-react';
 
 export default async function PDFEditorPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +16,7 @@ export default async function PDFEditorPage({ params }: { params: Promise<{ id: 
         </div>
       }
     >
-      <EditablePDFEditor templateId={id} />
+      <FabricPDFEditor templateId={id} />
     </Suspense>
   );
 }

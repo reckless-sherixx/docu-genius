@@ -1,4 +1,5 @@
 
+
 export default function page() {
   return (
     <div>
@@ -6,3 +7,4 @@ export default function page() {
     </div>
   )
 }
+

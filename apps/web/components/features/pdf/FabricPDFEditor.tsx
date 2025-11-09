@@ -1,0 +1,1359 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import * as fabric from 'fabric';
+import {
+    Type,
+    Save,
+    Loader2,
+    ZoomIn,
+    ZoomOut,
+    Undo,
+    Redo,
+    Bold,
+    Italic,
+    Underline,
+    ChevronDown,
+    Trash2,
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    Copy,
+    Image as ImageIcon,
+    Square,
+    Circle,
+    Minus,
+    List,
+    ListOrdered,
+    X
+} from 'lucide-react';
+
+// Dynamically import pdfjs
+let pdfjs: any = null;
+
+if (typeof window !== 'undefined') {
+    import('react-pdf').then((module) => {
+        pdfjs = module.pdfjs;
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    });
+}
+
+interface PDFEditorProps {
+    templateId: string;
+}
+
+interface TextElement {
+    id: string;
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    fontFamily: string;
+    color: string;
+    page: number;
+    isBold?: boolean;
+    isItalic?: boolean;
+    isUnderline?: boolean;
+    textAlign?: string;
+    angle?: number;
+    isPlaceholder?: boolean; // Mark as dynamic placeholder
+    variableName?: string; // Variable name like {{FIRST_NAME}}
+}
+
+interface ExtractedEntity {
+    type: string;
+    text: string;
+    startIndex: number;
+    endIndex: number;
+    confidence?: number;
+    variableName?: string;
+}
+
+interface PlaceholderSuggestion {
+    originalText: string;
+    variableName: string;
+    type: string;
+    position: { startIndex: number; endIndex: number };
+}
+
+interface PageCanvas {
+    pageNumber: number;
+    canvas: fabric.Canvas | null;
+    imageUrl: string;
+    width: number;
+    height: number;
+}
+
+const FONT_FAMILIES = [
+    'Arial',
+    'Times New Roman',
+    'Courier New',
+    'Georgia',
+    'Verdana',
+    'Helvetica',
+    'Trebuchet MS',
+    'Comic Sans MS'
+];
+
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 60, 72, 96];
+const COLORS = ['#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#808080', '#FFA500', '#800080', '#008080'];
+
+// Map PDF fonts to web fonts
+const PDF_FONT_MAP: Record<string, string> = {
+    'Times-Roman': 'Times New Roman',
+    'Times-Bold': 'Times New Roman',
+    'Times-Italic': 'Times New Roman',
+    'Times-BoldItalic': 'Times New Roman',
+    'Helvetica': 'Arial',
+    'Helvetica-Bold': 'Arial',
+    'Helvetica-Oblique': 'Arial',
+    'Courier': 'Courier New',
+    'Courier-Bold': 'Courier New',
+    'Symbol': 'Symbol',
+    'ZapfDingbats': 'Arial',
+};
+
+export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
+    const { data: session } = useSession();
+    const router = useRouter();
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [currentTool, setCurrentTool] = useState<string>('select');
+    const [scale, setScale] = useState(1.0);
+    const [showTextLayer, setShowTextLayer] = useState(true); // Toggle text visibility
+
+    // Canvas refs
+    const canvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
+    const fabricCanvases = useRef<{ [key: number]: fabric.Canvas }>({});
+
+    // Page data
+    const [pageCanvases, setPageCanvases] = useState<PageCanvas[]>([]);
+    const [textElements, setTextElements] = useState<TextElement[]>([]);
+
+    // Selected object state
+    const [selectedObject, setSelectedObject] = useState<fabric.Object | null>(null);
+    const [selectedPage, setSelectedPage] = useState<number | null>(null);
+
+    // UI state
+    const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
+    const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
+    const [showColorPicker, setShowColorPicker] = useState(false);
+
+    // History
+    const [history, setHistory] = useState<any[]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+
+    // NLP & Placeholders
+    const [nlpEntities, setNlpEntities] = useState<ExtractedEntity[]>([]);
+    const [explicitPlaceholders, setExplicitPlaceholders] = useState<ExtractedEntity[]>([]);
+    const [placeholderSuggestions, setPlaceholderSuggestions] = useState<PlaceholderSuggestion[]>([]);
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+
+    useEffect(() => {
+        if (session?.user?.token && templateId) {
+            loadPDF();
+        }
+    }, [templateId, session?.user?.token]);
+
+    // Cleanup canvases on unmount
+    useEffect(() => {
+        return () => {
+            Object.values(fabricCanvases.current).forEach(canvas => {
+                canvas.dispose();
+            });
+        };
+    }, []);
+
+    const loadPDF = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            console.log('📥 Step 1: Loading original PDF...');
+
+            const pdfUrl = `/api/proxy/pdf/${templateId}`;
+
+            if (!pdfjs) {
+                const module = await import('react-pdf');
+                pdfjs = module.pdfjs;
+                pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+            }
+
+            const loadingTask = pdfjs.getDocument(pdfUrl);
+            const pdf = await loadingTask.promise;
+
+            console.log(`✅ PDF loaded: ${pdf.numPages} pages`);
+
+            console.log('📝 Step 2: Getting PDF data with NLP analysis...');
+            // Get PDF data from backend (includes NLP entities)
+            const pdfDataResponse = await fetch(`${backendUrl}/api/pdf-editor/${templateId}/open`, {
+                headers: {
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+            });
+
+            if (!pdfDataResponse.ok) {
+                throw new Error('Failed to get PDF data');
+            }
+
+            const pdfDataResult = await pdfDataResponse.json();
+            const pdfData = pdfDataResult.data.pdfData;
+
+            // Store NLP results
+            if (pdfData.nlpEntities) {
+                setNlpEntities(pdfData.nlpEntities);
+                console.log(`🧠 Loaded ${pdfData.nlpEntities.length} detected entities`);
+            }
+            if (pdfData.explicitPlaceholders) {
+                setExplicitPlaceholders(pdfData.explicitPlaceholders);
+                console.log(`📍 Found ${pdfData.explicitPlaceholders.length} explicit placeholders`);
+            }
+            if (pdfData.placeholderSuggestions) {
+                setPlaceholderSuggestions(pdfData.placeholderSuggestions);
+                console.log(`💡 Generated ${pdfData.placeholderSuggestions.length} placeholder suggestions`);
+            }
+
+            console.log('📝 Step 3: Extracting text from original PDF...');
+            // Extract text with better font detection
+            const extractedText = await extractTextFromPDF(pdf);
+            console.log(`✅ Extracted ${extractedText.length} text blocks`);
+
+            console.log('🔨 Step 4: Getting editable PDF...');
+            // Send to backend to get editable PDF URL
+            const response = await fetch(`${backendUrl}/api/pdf-editor/prepare-editable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+                body: JSON.stringify({
+                    templateId,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Backend error:', errorText);
+                throw new Error(`Failed to prepare editable PDF: ${response.status}`);
+            }
+
+            const { editablePdfUrl } = await response.json();
+            console.log('✅ Editable PDF URL retrieved');
+
+            console.log('🖼️ Step 4: Loading editable PDF for canvas rendering...');
+            // Load the new PDF without text
+            const editableLoadingTask = pdfjs.getDocument(editablePdfUrl);
+            const editablePdf = await editableLoadingTask.promise;
+
+            // Convert pages to images (now without text)
+            const pageImages = await convertPagesToImages(editablePdf);
+            setPageCanvases(pageImages);
+
+            // Use the extracted text for editing
+            setTextElements(extractedText);
+
+            // Initialize history
+            setHistory([extractedText]);
+            setHistoryIndex(0);
+
+            setLoading(false);
+
+            console.log('🎨 Step 5: Initializing Fabric.js canvases...');
+            // Initialize Fabric canvases after render
+            setTimeout(() => initializeFabricCanvases(pageImages, extractedText), 100);
+
+        } catch (err) {
+            console.error('❌ Error loading PDF:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load PDF');
+            setLoading(false);
+        }
+    };
+
+    const convertPagesToImages = async (pdf: any): Promise<PageCanvas[]> => {
+        console.log('🖼️ Converting PDF pages to images (already without text)...');
+        const images: PageCanvas[] = [];
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 2 });
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            if (!context) continue;
+
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            // Fill with white background first
+            context.fillStyle = 'white';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Render page (backend already removed text, so this is clean)
+            await page.render({
+                canvasContext: context,
+                viewport: viewport,
+            }).promise;
+
+            const imageDataUrl = canvas.toDataURL('image/png');
+            images.push({
+                pageNumber: pageNum,
+                canvas: null,
+                imageUrl: imageDataUrl,
+                width: viewport.width,
+                height: viewport.height,
+            });
+
+            console.log(`✅ Page ${pageNum} converted to image`);
+        }
+
+        console.log(`✅ Converted ${images.length} pages`);
+        return images;
+    };
+
+    const extractTextFromPDF = async (pdf: any): Promise<TextElement[]> => {
+        console.log('🔍 Extracting text with Sejda-style grouping algorithm...');
+        const allTextElements: TextElement[] = [];
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const viewport = page.getViewport({ scale: 2 });
+
+            // Group text items into logical text blocks (like Sejda does)
+            const textBlocks = groupTextItems(textContent.items, viewport);
+
+            textBlocks.forEach((block, index) => {
+                allTextElements.push({
+                    id: `text-${pageNum}-${index}-${Date.now()}`,
+                    text: block.text,
+                    x: block.x,
+                    y: block.y,
+                    width: block.width,
+                    height: block.height,
+                    fontSize: block.fontSize,
+                    fontFamily: block.fontFamily,
+                    color: '#000000',
+                    page: pageNum,
+                    isBold: block.isBold,
+                    isItalic: block.isItalic,
+                    isUnderline: false,
+                    textAlign: 'left',
+                    angle: 0,
+                });
+            });
+        }
+
+        console.log(`✅ Extracted ${allTextElements.length} text blocks with Sejda-style grouping`);
+        return allTextElements;
+    };
+
+    // Sejda-style text grouping: Merge nearby text items into coherent blocks
+    const groupTextItems = (items: any[], viewport: any) => {
+        const textBlocks: any[] = [];
+        let currentBlock: any = null;
+
+        items.forEach((item: any, idx: number) => {
+            if (!item.str || !item.str.trim()) return;
+
+            const transform = item.transform;
+            const [scaleX, skewY, skewX, scaleY, x, y] = transform;
+
+            // Font detection
+            const pdfFontName = item.fontName || '';
+            const fontFamily = PDF_FONT_MAP[pdfFontName] || 'Arial';
+            const isBold = pdfFontName.includes('Bold');
+            const isItalic = pdfFontName.includes('Italic') || pdfFontName.includes('Oblique');
+
+            // Calculate font size
+            const fontSize = Math.sqrt(scaleX * scaleX + skewY * skewY);
+            const scaledFontSize = fontSize * 2;
+
+            // Calculate position
+            const posX = x * 2;
+            const posY = viewport.height - (y * 2) - scaledFontSize;
+            const width = item.width * 2;
+
+            // Check if this item should be merged with current block
+            // More strict conditions to preserve layout
+            if (currentBlock &&
+                Math.abs(currentBlock.y - posY) < scaledFontSize * 0.15 && // STRICTER: Same line (within 15% of font size)
+                posX >= (currentBlock.x + currentBlock.width - 5) && // Text comes after previous
+                posX <= (currentBlock.x + currentBlock.width + scaledFontSize * 0.8) && // STRICTER: Not too far horizontally
+                currentBlock.fontFamily === fontFamily &&
+                Math.abs(currentBlock.fontSize - scaledFontSize) < 2 && // Similar font size
+                currentBlock.isBold === isBold &&
+                currentBlock.isItalic === isItalic) {
+
+                // Merge with current block
+                const space = posX - (currentBlock.x + currentBlock.width);
+                // Add space only if there's a noticeable gap
+                currentBlock.text += (space > scaledFontSize * 0.2 ? ' ' : '') + item.str;
+                currentBlock.width = (posX + width) - currentBlock.x;
+
+            } else {
+                // Start new block (preserve more individual text elements)
+                if (currentBlock) {
+                    textBlocks.push(currentBlock);
+                }
+
+                currentBlock = {
+                    text: item.str,
+                    x: posX,
+                    y: posY,
+                    width: width,
+                    height: scaledFontSize * 1.2,
+                    fontSize: scaledFontSize,
+                    fontFamily: fontFamily,
+                    isBold: isBold,
+                    isItalic: isItalic,
+                };
+            }
+        });
+
+        // Push last block
+        if (currentBlock) {
+            textBlocks.push(currentBlock);
+        }
+
+        console.log(`📦 Grouped ${items.length} items into ${textBlocks.length} text blocks`);
+        return textBlocks;
+    };
+
+    const initializeFabricCanvases = (pages: PageCanvas[], texts: TextElement[]) => {
+        console.log('🎨 Initializing Fabric.js canvases...');
+
+        pages.forEach(page => {
+            const canvasEl = canvasRefs.current[page.pageNumber];
+            if (!canvasEl) return;
+
+            // Create Fabric canvas
+            const fabricCanvas = new fabric.Canvas(canvasEl, {
+                width: page.width * scale,
+                height: page.height * scale,
+                backgroundColor: '#ffffff',
+                selection: currentTool === 'select',
+            });
+
+            // Load background image
+            fabric.FabricImage.fromURL(page.imageUrl).then((img: any) => {
+                img.set({
+                    left: 0,
+                    top: 0,
+                    scaleX: scale,
+                    scaleY: scale,
+                    selectable: false,
+                    evented: false,
+                });
+                fabricCanvas.backgroundImage = img;
+                fabricCanvas.renderAll();
+            });
+
+            // Add text objects
+            texts
+                .filter(t => t.page === page.pageNumber)
+                .forEach(textEl => {
+                    addTextToCanvas(fabricCanvas, textEl);
+                });
+
+            // Event listeners
+            fabricCanvas.on('selection:created', (e: any) => handleObjectSelected(e, page.pageNumber));
+            fabricCanvas.on('selection:updated', (e: any) => handleObjectSelected(e, page.pageNumber));
+            fabricCanvas.on('selection:cleared', () => handleObjectDeselected());
+            fabricCanvas.on('object:modified', (e: any) => handleObjectModified(e, page.pageNumber));
+
+            fabricCanvases.current[page.pageNumber] = fabricCanvas;
+        });
+
+        console.log('✅ Fabric.js canvases initialized');
+    };
+
+    const addTextToCanvas = (canvas: fabric.Canvas, textEl: TextElement) => {
+        // Calculate the actual text width to prevent unwanted line breaks
+        // Create a temporary canvas context to measure text
+        const ctx = document.createElement('canvas').getContext('2d');
+        if (ctx) {
+            const fontStyle = `${textEl.isBold ? 'bold' : 'normal'} ${textEl.isItalic ? 'italic' : 'normal'} ${textEl.fontSize * scale}px ${textEl.fontFamily}`;
+            ctx.font = fontStyle;
+            const metrics = ctx.measureText(textEl.text);
+            const measuredWidth = metrics.width;
+
+            // Use the measured width with a 30% buffer for safety
+            const calculatedWidth = measuredWidth * 1.3;
+            var estimatedWidth = Math.max(calculatedWidth, textEl.width * scale * 1.2, 150 * scale);
+        } else {
+            // Fallback if canvas context not available
+            var estimatedWidth = Math.max(textEl.width * scale * 1.5, 150 * scale);
+        }
+
+        const textbox = new fabric.Textbox(textEl.text, {
+            left: textEl.x * scale,
+            top: textEl.y * scale,
+            width: estimatedWidth,
+            fontSize: textEl.fontSize * scale,
+            fontFamily: textEl.fontFamily,
+            fill: textEl.color,
+            fontWeight: textEl.isBold ? 'bold' : 'normal',
+            fontStyle: textEl.isItalic ? 'italic' : 'normal',
+            underline: textEl.isUnderline || false,
+            textAlign: (textEl.textAlign as any) || 'left',
+            angle: textEl.angle || 0,
+
+            // Editing properties
+            editable: true,
+            selectable: true,
+
+            // Visual controls
+            hasControls: true,
+            hasBorders: true,
+            cornerStyle: 'circle',
+            cornerColor: '#2563eb',
+            borderColor: '#2563eb',
+            cornerSize: 8,
+            transparentCorners: false,
+
+            // Text wrapping - disable automatic wrapping
+            splitByGrapheme: false,
+            lineHeight: 1.16,
+            charSpacing: 0,
+
+            // Prevent auto-sizing issues
+            lockScalingFlip: true,
+            noScaleCache: false,
+        });
+
+        // Store element ID in object
+        (textbox as any).elementId = textEl.id;
+        (textbox as any).pageNumber = textEl.page;
+
+        canvas.add(textbox);
+    };
+
+    const handleObjectSelected = (e: any, pageNumber: number) => {
+        const obj = e.selected?.[0] || e.target;
+        setSelectedObject(obj);
+        setSelectedPage(pageNumber);
+        setShowFontSizeMenu(false);
+        setShowFontFamilyMenu(false);
+        setShowColorPicker(false);
+    };
+
+    const handleObjectDeselected = () => {
+        setSelectedObject(null);
+        setSelectedPage(null);
+        setShowFontSizeMenu(false);
+        setShowFontFamilyMenu(false);
+        setShowColorPicker(false);
+    };
+
+    const handleObjectModified = (e: any, pageNumber: number) => {
+        saveCurrentState();
+    };
+
+    const addNewText = (pageNumber: number) => {
+        const canvas = fabricCanvases.current[pageNumber];
+        if (!canvas) return;
+
+        const centerX = (canvas.width / 2) - (100 * scale);
+        const centerY = (canvas.height / 2) - (20 * scale);
+
+        const newTextbox = new fabric.Textbox('Click to edit text', {
+            left: centerX,
+            top: centerY,
+            width: 200 * scale,
+            fontSize: 16 * scale,
+            fontFamily: 'Arial',
+            fill: '#000000',
+
+            // Editing
+            editable: true,
+            selectable: true,
+
+            // Visual
+            hasControls: true,
+            hasBorders: true,
+            cornerStyle: 'circle',
+            cornerColor: '#2563eb',
+            borderColor: '#2563eb',
+            cornerSize: 8,
+            transparentCorners: false,
+
+            // Text properties
+            splitByGrapheme: false,
+            lineHeight: 1.16,
+            charSpacing: 0,
+            textAlign: 'left',
+        });
+
+        (newTextbox as any).elementId = `new-text-${Date.now()}`;
+        (newTextbox as any).pageNumber = pageNumber;
+
+        canvas.add(newTextbox);
+        canvas.setActiveObject(newTextbox);
+
+        // Auto-enter edit mode
+        newTextbox.enterEditing();
+        newTextbox.selectAll();
+
+        canvas.renderAll();
+
+        setSelectedObject(newTextbox);
+        setSelectedPage(pageNumber);
+        saveCurrentState();
+    };
+
+    const updateSelectedObjectProperty = (property: string, value: any) => {
+        if (!selectedObject || !selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        (selectedObject as any).set(property, value);
+        canvas.renderAll();
+        saveCurrentState();
+    };
+
+    const deleteSelectedObject = () => {
+        if (!selectedObject || !selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        canvas.remove(selectedObject);
+        canvas.renderAll();
+        setSelectedObject(null);
+        setSelectedPage(null);
+        saveCurrentState();
+    };
+
+    const saveCurrentState = () => {
+        const allTextElements = extractAllTextFromCanvases();
+        const newHistory = history.slice(0, historyIndex + 1);
+        newHistory.push(allTextElements);
+        setHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+    };
+
+    const extractAllTextFromCanvases = (): TextElement[] => {
+        const elements: TextElement[] = [];
+
+        Object.entries(fabricCanvases.current).forEach(([pageNum, canvas]) => {
+            canvas.getObjects().forEach((obj: any) => {
+                if (obj.type === 'textbox') {
+                    elements.push({
+                        id: obj.elementId || `text-${Date.now()}`,
+                        text: obj.text || '',
+                        x: obj.left / scale,
+                        y: obj.top / scale,
+                        width: obj.width / scale,
+                        height: obj.height / scale,
+                        fontSize: obj.fontSize / scale,
+                        fontFamily: obj.fontFamily,
+                        color: obj.fill,
+                        page: parseInt(pageNum),
+                        isBold: obj.fontWeight === 'bold',
+                        isItalic: obj.fontStyle === 'italic',
+                        isUnderline: obj.underline,
+                        textAlign: obj.textAlign,
+                        angle: obj.angle,
+                    });
+                }
+            });
+        });
+
+        return elements;
+    };
+
+    const undo = () => {
+        if (historyIndex > 0) {
+            setHistoryIndex(historyIndex - 1);
+            restoreState(history[historyIndex - 1]);
+        }
+    };
+
+    const redo = () => {
+        if (historyIndex < history.length - 1) {
+            setHistoryIndex(historyIndex + 1);
+            restoreState(history[historyIndex + 1]);
+        }
+    };
+
+    const restoreState = (elements: TextElement[]) => {
+        // Clear all canvases
+        Object.values(fabricCanvases.current).forEach(canvas => {
+            canvas.getObjects().forEach((obj: any) => {
+                if (obj.type === 'textbox') {
+                    canvas.remove(obj);
+                }
+            });
+        });
+
+        // Re-add elements
+        elements.forEach(el => {
+            const canvas = fabricCanvases.current[el.page];
+            if (canvas) {
+                addTextToCanvas(canvas, el);
+                canvas.renderAll();
+            }
+        });
+    };
+
+    const savePDF = async () => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            console.log('💾 Saving PDF with enhanced text data...');
+
+            const allTextElements = extractAllTextFromCanvases();
+
+            const response = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+                body: JSON.stringify({
+                    templateId,
+                    textElements: allTextElements,
+                    deletedElements: [],
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save PDF');
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert('✅ PDF saved successfully with all formatting!');
+                router.push('/dashboard/templates');
+            }
+        } catch (err) {
+            console.error('❌ Error saving PDF:', err);
+            setError(err instanceof Error ? err.message : 'Failed to save PDF');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-50">
+                <div className="text-center">
+                    <Loader2 className="h-12 w-12 animate-spin text-[rgb(132,42,59)] mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">Loading PDF Editor...</p>
+                    <p className="text-sm text-gray-500 mt-2">Initializing Fabric.js canvas...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-50">
+                <div className="text-center">
+                    <div className="text-red-600 text-xl mb-4">❌ Error</div>
+                    <p className="text-gray-700 mb-4">{error}</p>
+                    <button
+                        onClick={() => router.push('/dashboard/templates')}
+                        className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition"
+                    >
+                        Back to Templates
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    const selectedTextbox = selectedObject?.type === 'textbox' ? (selectedObject as fabric.Textbox) : null;
+
+    const addImage = () => {
+        if (!selectedPage) return;
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imgUrl = event.target?.result as string;
+                const canvas = fabricCanvases.current[selectedPage];
+                if (!canvas) return;
+
+                fabric.Image.fromURL(imgUrl, {}).then((img: fabric.Image) => {
+                    img.scale(0.5);
+                    img.set({
+                        left: 100,
+                        top: 100,
+                        selectable: true,
+                    });
+                    canvas.add(img);
+                    canvas.setActiveObject(img);
+                    canvas.renderAll();
+                });
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    };
+
+    const addShape = (shapeType: 'rectangle' | 'circle') => {
+        if (!selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        let shape: fabric.Object;
+
+        if (shapeType === 'rectangle') {
+            shape = new fabric.Rect({
+                left: 100,
+                top: 100,
+                width: 150,
+                height: 100,
+                fill: 'transparent',
+                stroke: '#000000',
+                strokeWidth: 2,
+                selectable: true,
+            });
+        } else {
+            shape = new fabric.Circle({
+                left: 100,
+                top: 100,
+                radius: 50,
+                fill: 'transparent',
+                stroke: '#000000',
+                strokeWidth: 2,
+                selectable: true,
+            });
+        }
+
+        canvas.add(shape);
+        canvas.setActiveObject(shape);
+        canvas.renderAll();
+    };
+
+    const addHorizontalLine = () => {
+        if (!selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        const line = new fabric.Line([50, 100, 450, 100], {
+            stroke: '#000000',
+            strokeWidth: 2,
+            selectable: true,
+            hasControls: true,
+            lockRotation: false,
+        });
+
+        canvas.add(line);
+        canvas.setActiveObject(line);
+        canvas.renderAll();
+    };
+
+    const addBulletList = () => {
+        if (!selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        const listText = new fabric.Textbox('• Item 1\n• Item 2\n• Item 3', {
+            left: 100,
+            top: 100,
+            width: 300,
+            fontSize: 16,
+            fill: '#000000',
+            fontFamily: 'Arial',
+            selectable: true,
+            editable: true,
+        });
+
+        canvas.add(listText);
+        canvas.setActiveObject(listText);
+        canvas.renderAll();
+
+        // Add to textElements
+        const newTextElement: TextElement = {
+            id: `list-${Date.now()}`,
+            text: listText.text || '',
+            x: listText.left || 0,
+            y: listText.top || 0,
+            width: listText.width || 300,
+            height: listText.height || 100,
+            fontSize: 16,
+            fontFamily: 'Arial',
+            color: '#000000',
+            page: selectedPage,
+        };
+
+        setTextElements([...textElements, newTextElement]);
+    };
+
+    const addNumberedList = () => {
+        if (!selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        const listText = new fabric.Textbox('1. Item 1\n2. Item 2\n3. Item 3', {
+            left: 100,
+            top: 100,
+            width: 300,
+            fontSize: 16,
+            fill: '#000000',
+            fontFamily: 'Arial',
+            selectable: true,
+            editable: true,
+        });
+
+        canvas.add(listText);
+        canvas.setActiveObject(listText);
+        canvas.renderAll();
+
+        // Add to textElements
+        const newTextElement: TextElement = {
+            id: `list-${Date.now()}`,
+            text: listText.text || '',
+            x: listText.left || 0,
+            y: listText.top || 0,
+            width: listText.width || 300,
+            height: listText.height || 100,
+            fontSize: 16,
+            fontFamily: 'Arial',
+            color: '#000000',
+            page: selectedPage,
+        };
+
+        setTextElements([...textElements, newTextElement]);
+    };
+
+    const deleteSelected = () => {
+        if (!selectedObject || !selectedPage) return;
+
+        const canvas = fabricCanvases.current[selectedPage];
+        if (!canvas) return;
+
+        canvas.remove(selectedObject);
+        canvas.renderAll();
+        setSelectedObject(null);
+
+        // If it's text, also remove from textElements
+        if (selectedObject.type === 'textbox') {
+            const textId = (selectedObject as any).id;
+            setTextElements(textElements.filter(el => el.id !== textId));
+        }
+    };
+
+    return (
+        <div className="flex flex-col h-screen bg-gray-50">
+            {/* Top Toolbar */}
+            <div className="bg-white border-b border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between px-4 py-2">
+                    <div className="flex items-center gap-1">
+                        {/* Add Elements */}
+                        <div className="flex gap-1 border-r border-gray-200 pr-2 mr-2">
+                            <button
+                                onClick={addImage}
+                                disabled={!selectedPage}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50 text-sm"
+                                title="Add Image"
+                            >
+                                <ImageIcon className="h-4 w-4" />
+                                <span>Image</span>
+                            </button>
+                            <button
+                                onClick={addBulletList}
+                                disabled={!selectedPage}
+                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                title="Add Bullet List"
+                            >
+                                <List className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={addNumberedList}
+                                disabled={!selectedPage}
+                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                title="Add Numbered List"
+                            >
+                                <ListOrdered className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={addHorizontalLine}
+                                disabled={!selectedPage}
+                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                title="Add Horizontal Line"
+                            >
+                                <Minus className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => addShape('rectangle')}
+                                disabled={!selectedPage}
+                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                title="Add Rectangle"
+                            >
+                                <Square className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => addShape('circle')}
+                                disabled={!selectedPage}
+                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                title="Add Circle"
+                            >
+                                <Circle className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        {/* Undo/Redo */}
+                        <button
+                            onClick={undo}
+                            disabled={historyIndex <= 0}
+                            className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 transition"
+                            title="Undo"
+                        >
+                            <Undo className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={redo}
+                            disabled={historyIndex >= history.length - 1}
+                            className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 transition"
+                            title="Redo"
+                        >
+                            <Redo className="h-4 w-4" />
+                        </button>
+
+                        {/* Delete */}
+                        {selectedObject && (
+                            <button
+                                onClick={deleteSelected}
+                                className="p-2 hover:bg-red-100 text-red-600 rounded transition"
+                                title="Delete Selected"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </button>
+                        )}
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Zoom */}
+                        <button
+                            onClick={() => setScale(Math.max(0.5, scale - 0.1))}
+                            className="p-2 hover:bg-gray-100 rounded transition"
+                        >
+                            <ZoomOut className="h-4 w-4" />
+                        </button>
+                        <span className="text-sm font-medium min-w-[50px] text-center">
+                            {Math.round(scale * 100)}%
+                        </span>
+                        <button
+                            onClick={() => setScale(Math.min(2, scale + 0.1))}
+                            className="p-2 hover:bg-gray-100 rounded transition"
+                        >
+                            <ZoomIn className="h-4 w-4" />
+                        </button>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Toggle Text Layer */}
+                        <button
+                            onClick={() => {
+                                setShowTextLayer(!showTextLayer);
+                                // Toggle visibility of all text objects
+                                Object.values(fabricCanvases.current).forEach(canvas => {
+                                    canvas.getObjects().forEach((obj: any) => {
+                                        if (obj.type === 'textbox') {
+                                            obj.set('visible', !showTextLayer);
+                                        }
+                                    });
+                                    canvas.renderAll();
+                                });
+                            }}
+                            className={`px-3 py-2 text-sm rounded transition flex items-center gap-2 ${showTextLayer ? 'bg-[rgb(132,42,59)] text-white' : 'bg-gray-200 hover:bg-gray-300'
+                                }`}
+                            title={showTextLayer ? 'Hide Text Layer' : 'Show Text Layer'}
+                        >
+                            <Type className="h-4 w-4" />
+                            {showTextLayer ? 'Text: ON' : 'Text: OFF'}
+                        </button>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Save */}
+                        <button
+                            onClick={savePDF}
+                            disabled={saving}
+                            className="px-4 py-2 bg-[rgb(132,42,59)] hover:bg-[rgb(112,32,49)] text-white text-sm rounded shadow-sm transition disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {saving ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="h-4 w-4" />
+                                    Apply Changes
+                                </>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => router.push('/dashboard/templates')}
+                            className="px-4 py-2 text-sm hover:bg-gray-100 rounded transition"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                {/* Formatting Toolbar (shows when text selected) */}
+                {selectedTextbox && (
+                    <div className="flex items-center gap-1 px-4 py-2 border-t border-gray-200 bg-rose-50">
+                        {/* Bold */}
+                        <button
+                            onClick={() => updateSelectedObjectProperty('fontWeight', selectedTextbox.fontWeight === 'bold' ? 'normal' : 'bold')}
+                            className={`p-2 rounded transition ${selectedTextbox.fontWeight === 'bold' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <Bold className="h-4 w-4" />
+                        </button>
+
+                        {/* Italic */}
+                        <button
+                            onClick={() => updateSelectedObjectProperty('fontStyle', selectedTextbox.fontStyle === 'italic' ? 'normal' : 'italic')}
+                            className={`p-2 rounded transition ${selectedTextbox.fontStyle === 'italic' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <Italic className="h-4 w-4" />
+                        </button>
+
+                        {/* Underline */}
+                        <button
+                            onClick={() => updateSelectedObjectProperty('underline', !selectedTextbox.underline)}
+                            className={`p-2 rounded transition ${selectedTextbox.underline ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <Underline className="h-4 w-4" />
+                        </button>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Font Size */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setShowFontSizeMenu(!showFontSizeMenu);
+                                    setShowFontFamilyMenu(false);
+                                    setShowColorPicker(false);
+                                }}
+                                className="px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition flex items-center gap-2 text-sm"
+                            >
+                                {Math.round((selectedTextbox.fontSize || 16) / scale)}
+                                <ChevronDown className="h-3 w-3" />
+                            </button>
+                            {showFontSizeMenu && (
+                                <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-64 overflow-y-auto">
+                                    {FONT_SIZES.map(size => (
+                                        <button
+                                            key={size}
+                                            onClick={() => {
+                                                updateSelectedObjectProperty('fontSize', size * scale);
+                                                setShowFontSizeMenu(false);
+                                            }}
+                                            className="block w-full px-4 py-2 text-left hover:bg-blue-50 text-sm"
+                                        >
+                                            {size}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Font Family */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setShowFontFamilyMenu(!showFontFamilyMenu);
+                                    setShowFontSizeMenu(false);
+                                    setShowColorPicker(false);
+                                }}
+                                className="px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition flex items-center gap-2 text-sm min-w-[140px]"
+                            >
+                                <span className="truncate">{selectedTextbox.fontFamily}</span>
+                                <ChevronDown className="h-3 w-3" />
+                            </button>
+                            {showFontFamilyMenu && (
+                                <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50">
+                                    {FONT_FAMILIES.map(font => (
+                                        <button
+                                            key={font}
+                                            onClick={() => {
+                                                updateSelectedObjectProperty('fontFamily', font);
+                                                setShowFontFamilyMenu(false);
+                                            }}
+                                            className="block w-full px-4 py-2 text-left hover:bg-blue-50 text-sm"
+                                            style={{ fontFamily: font }}
+                                        >
+                                            {font}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Color Picker */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setShowColorPicker(!showColorPicker);
+                                    setShowFontSizeMenu(false);
+                                    setShowFontFamilyMenu(false);
+                                }}
+                                className="p-2 bg-white hover:bg-gray-100 rounded border border-gray-300"
+                            >
+                                <div
+                                    className="w-5 h-5 rounded border"
+                                    style={{ backgroundColor: selectedTextbox.fill as string }}
+                                />
+                            </button>
+                            {showColorPicker && (
+                                <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 p-2">
+                                    <div className="grid grid-cols-6 gap-2 mb-2">
+                                        {COLORS.map(color => (
+                                            <button
+                                                key={color}
+                                                onClick={() => {
+                                                    updateSelectedObjectProperty('fill', color);
+                                                    setShowColorPicker(false);
+                                                }}
+                                                className="w-8 h-8 rounded border-2 hover:border-blue-500"
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <input
+                                        type="color"
+                                        value={selectedTextbox.fill as string}
+                                        onChange={(e) => updateSelectedObjectProperty('fill', e.target.value)}
+                                        className="w-full h-8 rounded"
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Text Align */}
+                        <button
+                            onClick={() => updateSelectedObjectProperty('textAlign', 'left')}
+                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'left' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <AlignLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={() => updateSelectedObjectProperty('textAlign', 'center')}
+                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'center' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <AlignCenter className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={() => updateSelectedObjectProperty('textAlign', 'right')}
+                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'right' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                                }`}
+                        >
+                            <AlignRight className="h-4 w-4" />
+                        </button>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+
+                        {/* Delete */}
+                        <button
+                            onClick={deleteSelectedObject}
+                            className="p-2 bg-white hover:bg-red-50 text-red-600 rounded border border-gray-300 transition"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
+                )}
+
+                {/* Tools Bar */}
+                <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 bg-gray-50">
+                    <button
+                        onClick={() => setCurrentTool('select')}
+                        className={`px-3 py-1.5 rounded transition text-sm flex items-center gap-2 ${currentTool === 'select' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-100 border border-gray-300'
+                            }`}
+                    >
+                        <Type className="h-4 w-4" />
+                        Select
+                    </button>
+
+                    <button
+                        onClick={() => setCurrentTool('text')}
+                        className={`px-3 py-1.5 rounded transition text-sm flex items-center gap-2 ${currentTool === 'text' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-100 border border-gray-300'
+                            }`}
+                    >
+                        <Type className="h-4 w-4" />
+                        Add Text
+                    </button>
+
+                    <span className="text-xs text-gray-500 ml-2">
+                        {currentTool === 'text' ? 'Click "Add Text" on any page' : 'Double-click text to edit, drag to move'}
+                    </span>
+                </div>
+            </div>
+
+            {/* Canvas Area */}
+            <div className="flex flex-1 overflow-hidden">
+                {/* Center - PDF Canvas */}
+                <div className="flex-1 overflow-auto bg-gray-100 p-8 relative">
+                    <div className="max-w-5xl mx-auto space-y-8">
+                        {pageCanvases.map((page) => (
+                            <div
+                                key={`page-${page.pageNumber}`}
+                                className="relative bg-white shadow-lg"
+                            >
+                                <canvas
+                                    ref={(el) => {
+                                        canvasRefs.current[page.pageNumber] = el;
+                                    }}
+                                    id={`canvas-page-${page.pageNumber}`}
+                                    className="w-full h-full"
+                                />
+
+                            {/* Page controls */}
+                            <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                                <span className="bg-gray-800 bg-opacity-75 text-white px-3 py-1 rounded text-sm">
+                                    Page {page.pageNumber} / {pageCanvases.length}
+                                </span>
+                                {currentTool === 'text' && (
+                                    <button
+                                        onClick={() => addNewText(page.pageNumber)}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1 shadow-lg transition"
+                                    >
+                                        <Type className="h-3 w-3" />
+                                        Add Text
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                </div>
+
+            </div>
+        </div>
+    );
+}
