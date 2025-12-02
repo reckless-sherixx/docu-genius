@@ -43,7 +43,7 @@ export class TemplateController {
             // Create template record
             const template = await prisma.template.create({
                 data: {
-                    template_name: name,
+                    template_name: file.originalname,
                     template_description: description || null,
                     category: category || 'General',
                     s3_key: s3Key,
@@ -52,6 +52,7 @@ export class TemplateController {
                     status: 'PROCESSING',
                     uploaded_by: userId,
                     organization_id: organizationId,
+                    is_temporary: true, // Start as temporary until user saves permanently
                 },
             });
 
@@ -149,6 +150,7 @@ export class TemplateController {
             );
 
             // Create template record in database with UPLOADING status
+            // Templates start as temporary until user explicitly saves them permanently
             const template = await prisma.template.create({
                 data: {
                     template_name: name,
@@ -160,6 +162,7 @@ export class TemplateController {
                     status: 'UPLOADING',
                     uploaded_by: userId,
                     organization_id: organizationId,
+                    is_temporary: true, // Start as temporary until user saves permanently
                 },
             });
 
@@ -309,9 +312,11 @@ export class TemplateController {
                 });
             }
 
+            // Only return permanent (saved) templates, not temporary ones
             const templates = await prisma.template.findMany({
                 where: {
                     organization_id: organizationId as string,
+                    is_temporary: false, // Only permanent templates
                 },
                 include: {
                     fields: true,

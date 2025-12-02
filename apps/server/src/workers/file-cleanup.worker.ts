@@ -1,9 +1,7 @@
 import { Worker, Job } from 'bullmq';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { redisConnection } from '../config/redis.config.js';
-
-const prisma = new PrismaClient();
 
 interface CleanupJob {
   templateId: string;
@@ -50,28 +48,25 @@ class FileCleanupWorker {
 
   /**
    * Scan and cleanup expired files
-   * Run periodically to find and delete expired files
+   * Run periodically to find and delete expired temporary files
    */
   async scanExpiredFiles(): Promise<void> {
     try {
       console.log('🔍 Scanning for expired temporary files...');
 
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const now = new Date();
 
-      // Find templates that were created > 2 hours ago and are temporary
-      // Assuming temporary files have "Edited - " in their name
+      // Find temporary templates that have expired
       const expiredTemplates = await prisma.template.findMany({
         where: {
-          template_name: {
-            contains: 'Edited - ',
-          },
-          created_at: {
-            lt: twoHoursAgo,
+          is_temporary: true,
+          expires_at: {
+            lt: now,
           },
         },
       });
 
-      console.log(`📊 Found ${expiredTemplates.length} expired files`);
+      console.log(`📊 Found ${expiredTemplates.length} expired temporary files`);
 
       for (const template of expiredTemplates) {
         try {

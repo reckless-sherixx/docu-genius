@@ -64,22 +64,6 @@ interface TextElement {
     variableName?: string; // Variable name like {{FIRST_NAME}}
 }
 
-interface ExtractedEntity {
-    type: string;
-    text: string;
-    startIndex: number;
-    endIndex: number;
-    confidence?: number;
-    variableName?: string;
-}
-
-interface PlaceholderSuggestion {
-    originalText: string;
-    variableName: string;
-    type: string;
-    position: { startIndex: number; endIndex: number };
-}
-
 interface PageCanvas {
     pageNumber: number;
     canvas: fabric.Canvas | null;
@@ -117,7 +101,7 @@ const PDF_FONT_MAP: Record<string, string> = {
     'ZapfDingbats': 'Arial',
 };
 
-export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
+export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEditorProps) {
     const { data: session } = useSession();
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -126,6 +110,7 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
     const [currentTool, setCurrentTool] = useState<string>('select');
     const [scale, setScale] = useState(1.0);
     const [showTextLayer, setShowTextLayer] = useState(true); // Toggle text visibility
+    const [templateId, setTemplateId] = useState(initialTemplateId); // Track current template ID
 
     // Canvas refs
     const canvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
@@ -147,11 +132,6 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
     // History
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
-
-    // NLP & Placeholders
-    const [nlpEntities, setNlpEntities] = useState<ExtractedEntity[]>([]);
-    const [explicitPlaceholders, setExplicitPlaceholders] = useState<ExtractedEntity[]>([]);
-    const [placeholderSuggestions, setPlaceholderSuggestions] = useState<PlaceholderSuggestion[]>([]);
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 
@@ -191,7 +171,7 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
             console.log(`✅ PDF loaded: ${pdf.numPages} pages`);
 
             console.log('📝 Step 2: Getting PDF data with NLP analysis...');
-            // Get PDF data from backend (includes NLP entities)
+            // Get PDF data from backend (includes NLP entities and saved text elements)
             const pdfDataResponse = await fetch(`${backendUrl}/api/pdf-editor/${templateId}/open`, {
                 headers: {
                     Authorization: `Bearer ${session?.user?.token}`,
@@ -204,25 +184,20 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
 
             const pdfDataResult = await pdfDataResponse.json();
             const pdfData = pdfDataResult.data.pdfData;
+            const savedTextElements = pdfDataResult.data.savedTextElements;
 
-            // Store NLP results
-            if (pdfData.nlpEntities) {
-                setNlpEntities(pdfData.nlpEntities);
-                console.log(`🧠 Loaded ${pdfData.nlpEntities.length} detected entities`);
-            }
-            if (pdfData.explicitPlaceholders) {
-                setExplicitPlaceholders(pdfData.explicitPlaceholders);
-                console.log(`📍 Found ${pdfData.explicitPlaceholders.length} explicit placeholders`);
-            }
-            if (pdfData.placeholderSuggestions) {
-                setPlaceholderSuggestions(pdfData.placeholderSuggestions);
-                console.log(`💡 Generated ${pdfData.placeholderSuggestions.length} placeholder suggestions`);
-            }
+            let extractedText: TextElement[];
 
-            console.log('📝 Step 3: Extracting text from original PDF...');
-            // Extract text with better font detection
-            const extractedText = await extractTextFromPDF(pdf);
-            console.log(`✅ Extracted ${extractedText.length} text blocks`);
+            // Check if we have saved text elements from a previous edit session
+            if (savedTextElements && savedTextElements.textElements && savedTextElements.textElements.length > 0) {
+                console.log('✅ Using saved text elements from previous session:', savedTextElements.textElements.length, 'elements');
+                extractedText = savedTextElements.textElements;
+            } else {
+                console.log('📝 Step 3: Extracting text from original PDF...');
+                // Extract text with better font detection (only for new PDFs)
+                extractedText = await extractTextFromPDF(pdf);
+                console.log(`✅ Extracted ${extractedText.length} text blocks`);
+            }
 
             console.log('🔨 Step 4: Getting editable PDF...');
             // Send to backend to get editable PDF URL
@@ -246,7 +221,7 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
             const { editablePdfUrl } = await response.json();
             console.log('✅ Editable PDF URL retrieved');
 
-            console.log('🖼️ Step 4: Loading editable PDF for canvas rendering...');
+            console.log('🖼️ Step 5: Loading editable PDF for canvas rendering...');
             // Load the new PDF without text
             const editableLoadingTask = pdfjs.getDocument(editablePdfUrl);
             const editablePdf = await editableLoadingTask.promise;
@@ -255,7 +230,7 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
             const pageImages = await convertPagesToImages(editablePdf);
             setPageCanvases(pageImages);
 
-            // Use the extracted text for editing
+            // Use the extracted/saved text for editing
             setTextElements(extractedText);
 
             // Initialize history
@@ -709,10 +684,11 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
         setError(null);
 
         try {
-            console.log('💾 Saving PDF with enhanced text data...');
+            console.log('💾 Saving PDF edits (temporary)...');
 
             const allTextElements = extractAllTextFromCanvases();
 
+            // Save edits - keeps as temporary
             const response = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
                 method: 'POST',
                 headers: {
@@ -733,12 +709,75 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
             const result = await response.json();
 
             if (result.success) {
-                alert('✅ PDF saved successfully with all formatting!');
-                router.push('/dashboard/templates');
+                // Update current templateId if a new one was created
+                if (result.data?.templateId && result.data.templateId !== templateId) {
+                    setTemplateId(result.data.templateId);
+                }
+                alert('✅ Changes saved! Click "Save as Template" to save permanently.');
             }
         } catch (err) {
             console.error('❌ Error saving PDF:', err);
             setError(err instanceof Error ? err.message : 'Failed to save PDF');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const saveAsPermanentTemplate = async () => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            console.log('💾 Saving as permanent template...');
+
+            const allTextElements = extractAllTextFromCanvases();
+
+            // First save current edits
+            const saveResponse = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+                body: JSON.stringify({
+                    templateId,
+                    textElements: allTextElements,
+                    deletedElements: [],
+                }),
+            });
+
+            if (!saveResponse.ok) {
+                throw new Error('Failed to save PDF');
+            }
+
+            const saveResult = await saveResponse.json();
+            const savedTemplateId = saveResult.data?.templateId || templateId;
+
+            // Now save as permanent template
+            const permanentResponse = await fetch(`${backendUrl}/api/pdf-editor/save-permanent`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+                body: JSON.stringify({
+                    templateId: savedTemplateId,
+                }),
+            });
+
+            if (!permanentResponse.ok) {
+                throw new Error('Failed to save template permanently');
+            }
+
+            const permanentResult = await permanentResponse.json();
+
+            if (permanentResult.success) {
+                alert('✅ Template saved permanently! It will appear in your templates list.');
+                router.push('/dashboard/templates');
+            }
+        } catch (err) {
+            console.error('❌ Error saving permanent template:', err);
+            setError(err instanceof Error ? err.message : 'Failed to save template');
         } finally {
             setSaving(false);
         }
@@ -1089,9 +1128,28 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
 
                         <div className="w-px h-6 bg-gray-300 mx-1" />
 
-                        {/* Save */}
+                        {/* Save Draft */}
                         <button
                             onClick={savePDF}
+                            disabled={saving}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded shadow-sm transition disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {saving ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="h-4 w-4" />
+                                    Save Draft
+                                </>
+                            )}
+                        </button>
+
+                        {/* Save as Template (Permanent) */}
+                        <button
+                            onClick={saveAsPermanentTemplate}
                             disabled={saving}
                             className="px-4 py-2 bg-[rgb(132,42,59)] hover:bg-[rgb(112,32,49)] text-white text-sm rounded shadow-sm transition disabled:opacity-50 flex items-center gap-2"
                         >
@@ -1103,7 +1161,7 @@ export default function FabricPDFEditor({ templateId }: PDFEditorProps) {
                             ) : (
                                 <>
                                     <Save className="h-4 w-4" />
-                                    Apply Changes
+                                    Save as Template
                                 </>
                             )}
                         </button>

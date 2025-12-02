@@ -33,6 +33,19 @@ export class PDFEditorController {
       const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
       const downloadUrl = `${backendUrl}/api/pdf-editor/${id}/download`;
 
+      // Check if this template has saved text elements (from previous edit session)
+      let savedTextElements = null;
+      if (template.extracted_text && template.extracted_text.endsWith('-elements.json')) {
+        try {
+          console.log('📄 Loading saved text elements from S3:', template.extracted_text);
+          const jsonBuffer = await s3Service.downloadFileAsBuffer(template.extracted_text);
+          savedTextElements = JSON.parse(jsonBuffer.toString());
+          console.log('✅ Loaded saved text elements:', savedTextElements.textElements?.length || 0, 'elements');
+        } catch (err) {
+          console.warn('⚠️ Could not load saved text elements:', err);
+        }
+      }
+
       // Serialize BigInt fields to strings for JSON
       const serializedTemplate = {
         ...template,
@@ -46,6 +59,7 @@ export class PDFEditorController {
           pdfData,
           downloadUrl,
           editable: true,
+          savedTextElements, // Return saved elements if available
         },
       });
     } catch (error) {
@@ -354,6 +368,67 @@ export class PDFEditorController {
       return res.status(500).json({
         success: false,
         message: 'Failed to draw shape',
+      });
+    }
+  }
+
+  /**
+   * Save template as permanent (not temporary)
+   * This makes the template visible in the templates list
+   */
+  async savePermanentTemplate(req: Request, res: Response): Promise<any> {
+    try {
+      const { templateId, templateName, templateDescription } = req.body;
+
+      if (!templateId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template ID is required',
+        });
+      }
+
+      // Get the template
+      const template = await prisma.template.findUnique({
+        where: { id: templateId },
+      });
+
+      if (!template) {
+        return res.status(404).json({
+          success: false,
+          message: 'Template not found',
+        });
+      }
+
+      // Update template to make it permanent
+      const updatedTemplate = await prisma.template.update({
+        where: { id: templateId },
+        data: {
+          is_temporary: false,
+          expires_at: null, // Remove expiration
+          template_name: templateName || template.template_name.replace('Edited - ', ''),
+          template_description: templateDescription || template.template_description,
+        },
+      });
+
+      // Serialize BigInt for JSON response
+      const serializedTemplate = {
+        ...updatedTemplate,
+        file_size: updatedTemplate.file_size ? updatedTemplate.file_size.toString() : null,
+      };
+
+      console.log(`✅ Template saved permanently: ${templateId}`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Template saved permanently',
+        data: serializedTemplate,
+      });
+    } catch (error) {
+      console.error('❌ Error saving permanent template:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to save permanent template',
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }

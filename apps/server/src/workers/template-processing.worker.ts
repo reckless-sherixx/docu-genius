@@ -1,5 +1,6 @@
 import { Worker, Job } from 'bullmq';
-import { PrismaClient, TemplateStatus, TemplateType, FieldType } from '@prisma/client';
+import { TemplateStatus, TemplateType, FieldType } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { redisConnection } from '../config/redis.config.js';
 import sharp from 'sharp';
@@ -7,7 +8,6 @@ import { createWorker } from 'tesseract.js';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const prisma = new PrismaClient();
 
 interface TemplateProcessJob {
   templateId: string;

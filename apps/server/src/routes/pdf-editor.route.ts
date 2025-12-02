@@ -48,4 +48,8 @@ router.post('/draw-shape', authMiddleware, (req, res) =>
   pdfEditorController.drawShape(req, res)
 );
 
+router.post('/save-permanent', authMiddleware, (req, res) =>
+  pdfEditorController.savePermanentTemplate(req, res)
+);
+
 export default router;

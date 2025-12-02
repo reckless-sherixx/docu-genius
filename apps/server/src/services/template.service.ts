@@ -71,9 +71,11 @@ export class TemplateService {
 
     static async getTemplates(organizationId: string) {
         try {
+            // Only return permanent (saved) templates, not temporary ones
             const templates = await prisma.template.findMany({
                 where: {
                     organization_id: organizationId,
+                    is_temporary: false, // Only permanent templates
                 },
                 orderBy: {
                     created_at: 'desc',

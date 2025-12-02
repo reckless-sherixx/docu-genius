@@ -1,14 +1,12 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { PDFDocument, rgb, StandardFonts, degrees, PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import { fileCleanupQueue } from '../queues/file-cleanup.queue.js';
-import { NLPService, EntityType } from './nlp.service.js';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const prisma = new PrismaClient();
 
 export class PDFEditorService {
 
@@ -34,7 +32,7 @@ export class PDFEditorService {
             const originalDoc = await PDFDocument.load(originalBuffer);
             const originalPages = originalDoc.getPages();
             
-            // Create new PDF with only graphics (no text)
+            // Create new PDF with only graphics 
             const newPdfDoc = await PDFDocument.create();
             
             console.log('📄 Converting pages to images (removing text layer)...');
@@ -126,10 +124,6 @@ export class PDFEditorService {
             const parse = require('pdf-parse');
             const parsedPdf = await parse(pdfBuffer);
 
-            // Apply NLP to extract entities and placeholders
-            console.log('🧠 Applying NLP to extract entities and placeholders...');
-            const nlpResult = await NLPService.extractEntities(parsedPdf.text);
-
             const pdfData = {
                 templateId,
                 type: 'text',
@@ -142,12 +136,9 @@ export class PDFEditorService {
                 extractedText: parsedPdf.text,
                 editable: true,
                 ocrApplied: false,
-                nlpEntities: nlpResult.entities,
-                explicitPlaceholders: nlpResult.placeholders,
-                placeholderSuggestions: nlpResult.suggestions,
             };
 
-            console.log(`✅ Processed ${pages.length} pages with ${nlpResult.entities.length} entities`);
+            console.log(`✅ Processed ${pages.length} pages`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing text PDF:', error);
@@ -181,10 +172,6 @@ export class PDFEditorService {
                 ocrApplied = true;
             }
 
-            // Apply NLP to extract entities and placeholders
-            console.log('🧠 Applying NLP to extract entities and placeholders...');
-            const nlpResult = await NLPService.extractEntities(ocrText);
-
             const pdfData = {
                 templateId,
                 type: 'scanned',
@@ -197,12 +184,9 @@ export class PDFEditorService {
                 extractedText: ocrText,
                 editable: true,
                 ocrApplied,
-                nlpEntities: nlpResult.entities,
-                explicitPlaceholders: nlpResult.placeholders,
-                placeholderSuggestions: nlpResult.suggestions,
             };
 
-            console.log(`✅ Processed scanned PDF with ${ocrApplied ? 'OCR' : 'existing text'} and ${nlpResult.entities.length} entities`);
+            console.log(`✅ Processed scanned PDF with ${ocrApplied ? 'OCR' : 'existing text'}`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing scanned PDF:', error);
@@ -341,9 +325,19 @@ export class PDFEditorService {
             const timestamp = Date.now();
             const fileName = `Edited - ${originalTemplate.template_name}`;
             const s3Key = `templates/${organizationId}/edited-${timestamp}.pdf`;
+            const textElementsS3Key = `templates/${organizationId}/edited-${timestamp}-elements.json`;
 
-            // Upload buffer directly to S3
+            // Upload PDF buffer to S3
             await s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf');
+
+            // Also save text elements JSON to S3 (for reopening without re-extraction)
+            const textElementsJson = JSON.stringify({
+                textElements,
+                deletedElements,
+                savedAt: new Date().toISOString(),
+            });
+            await s3Service.uploadFile(textElementsS3Key, Buffer.from(textElementsJson), 'application/json');
+            console.log('💾 Saved text elements JSON to S3:', textElementsS3Key);
 
             // Save to database with expiration (2 hours)
             const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
@@ -360,6 +354,8 @@ export class PDFEditorService {
                     is_temporary: true,
                     expires_at: expiresAt,
                     parent_template_id: templateId,
+                    // Store the S3 key for text elements in extracted_text field
+                    extracted_text: textElementsS3Key,
                 },
             });
 
@@ -382,17 +378,17 @@ export class PDFEditorService {
         textElements: any[],
         deletedElements: any[]
     ): Promise<Buffer> {
-        console.log('🔨 Creating NEW PDF from extracted data (Sejda-style)...');
+        console.log('🔨 Rebuilding PDF with edited text...');
         console.log(`📝 Total text elements: ${textElements.length}`);
         console.log(`🗑️ Deleted elements: ${deletedElements.length}`);
 
         try {
-            
+            // Load original PDF
             const originalDoc = await PDFDocument.load(originalBuffer);
             const originalPages = originalDoc.getPages();
+            
+            // Create new PDF document
             const newPdfDoc = await PDFDocument.create();
-
-            console.log('📄 Creating new PDF with extracted data...');
 
             // Process each page
             for (let pageNum = 1; pageNum <= originalPages.length; pageNum++) {
@@ -404,6 +400,7 @@ export class PDFEditorService {
                 // Create new blank page
                 const newPage = newPdfDoc.addPage([width, height]);
 
+                // Embed the original page (includes images, graphics, AND original text)
                 const embeddedPage = await newPdfDoc.embedPage(originalPage);
                 newPage.drawPage(embeddedPage, {
                     x: 0,
@@ -415,7 +412,6 @@ export class PDFEditorService {
                 // Get text elements for this page
                 const pageElements = textElements.filter(el => el.page === pageNum);
                 const activeElements = pageElements.filter(element => {
-                    // Skip deleted elements
                     const isDeleted = deletedElements.some(
                         del => del.id === element.id && del.page === pageNum
                     );
@@ -424,20 +420,64 @@ export class PDFEditorService {
 
                 console.log(`📄 Page ${pageNum}: ${activeElements.length}/${pageElements.length} active elements`);
 
-                // Redraw ALL active text elements (both original and new)
+                // Draw white rectangles FIRST to cover original text
+                // Use larger padding to ensure complete coverage
+                for (const element of activeElements) {
+                    const padding = 4; // Larger padding for complete coverage
+                    const rectX = Math.max(0, (element.x / 2) - padding);
+                    const rectHeight = (element.height / 2) + (padding * 2);
+                    const rectY = height - (element.y / 2) - rectHeight + padding;
+                    const rectWidth = (element.width / 2) + (padding * 2);
+
+                    newPage.drawRectangle({
+                        x: rectX,
+                        y: rectY,
+                        width: rectWidth,
+                        height: rectHeight,
+                        color: rgb(1, 1, 1), // White
+                        borderWidth: 0,
+                    });
+                }
+
+                // Also cover deleted elements (they shouldn't show original text)
+                const deletedOnPage = deletedElements.filter(del => del.page === pageNum);
+                for (const element of deletedOnPage) {
+                    // Find the original element data if available
+                    const originalElement = textElements.find(
+                        te => te.id === element.id && te.page === pageNum
+                    );
+                    if (originalElement) {
+                        const padding = 4;
+                        const rectX = Math.max(0, (originalElement.x / 2) - padding);
+                        const rectHeight = (originalElement.height / 2) + (padding * 2);
+                        const rectY = height - (originalElement.y / 2) - rectHeight + padding;
+                        const rectWidth = (originalElement.width / 2) + (padding * 2);
+
+                        newPage.drawRectangle({
+                            x: rectX,
+                            y: rectY,
+                            width: rectWidth,
+                            height: rectHeight,
+                            color: rgb(1, 1, 1), // White
+                            borderWidth: 0,
+                        });
+                    }
+                }
+
+                // Draw new text on top
                 for (const element of activeElements) {
                     await this.addTextElement(newPdfDoc, newPage, element);
                 }
             }
 
-            // Save the COMPLETELY NEW PDF
+            // Save the new PDF
             const pdfBytes = await newPdfDoc.save();
-            console.log('✅ NEW PDF created successfully from extracted data');
+            console.log('✅ PDF rebuilt successfully');
             console.log(`📦 PDF size: ${(pdfBytes.length / 1024).toFixed(2)} KB`);
             
             return Buffer.from(pdfBytes);
         } catch (error) {
-            console.error('❌ Error creating new PDF from extracted data:', error);
+            console.error('❌ Error rebuilding PDF:', error);
             throw error;
         }
     }

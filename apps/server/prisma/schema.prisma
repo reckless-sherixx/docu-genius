@@ -10,7 +10,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum InvitationStatus {
@@ -137,10 +136,10 @@ model Template {
   approved_by          String?
   approved_at          DateTime?
   
-  // Temporary file management (for edited PDFs)
+  // Temporary file management
   is_temporary         Boolean        @default(false)
   expires_at           DateTime?
-  parent_template_id   String?        // Reference to original template
+  parent_template_id   String?        
   
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
@@ -159,11 +158,11 @@ model TemplateField {
   template_id   String
   field_name    String    @db.VarChar(191)
   field_type    FieldType @default(TEXT)
-  placeholder   String    // e.g., "{{FULL_NAME}}", "{{DATE_OF_BIRTH}}"
+  placeholder   String    
   is_required   Boolean   @default(true)
   default_value String?
-  validation_rules Json?   // Store regex, min/max length, etc.
-  position_data Json?     // Store x, y coordinates, page number
+  validation_rules Json?  
+  position_data Json?     
   
   created_at    DateTime  @default(now())
   template      Template  @relation(fields: [template_id], references: [id], onDelete: Cascade)
