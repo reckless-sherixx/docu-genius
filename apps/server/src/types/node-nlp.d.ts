@@ -1,68 +1,45 @@
 declare module 'node-nlp' {
-    export interface NlpManagerConfig {
-        languages: string[];
+    export interface NlpManagerSettings {
+        languages?: string[];
         forceNER?: boolean;
-        nlu?: any;
-        ner?: any;
+        nlu?: {
+            useNoneFeature?: boolean;
+        };
+        ner?: {
+            useDuckling?: boolean;
+        };
     }
 
-    export interface NerManagerConfig {
-        threshold?: number;
-    }
-
-    export interface Entity {
+    export interface NlpEntity {
         entity: string;
+        option: string;
         sourceText: string;
-        accuracy: number;
+        utteranceText: string;
         start: number;
         end: number;
+        accuracy: number;
         len: number;
     }
 
-    export interface ProcessResult {
+    export interface NlpResult {
         locale: string;
         utterance: string;
-        languageGuessed: boolean;
-        localeIso2: string;
-        language: string;
-        domain: string;
-        classifications: any[];
+        entities: NlpEntity[];
         intent: string;
         score: number;
-        entities: Entity[];
-        sentiment: any;
-        actions: any[];
-        srcAnswer: string;
-        answer: string;
+        answer?: string;
     }
 
     export class NlpManager {
-        constructor(config: NlpManagerConfig);
-        addDocument(locale: string, utterance: string, intent: string): void;
-        addAnswer(locale: string, intent: string, answer: string): void;
+        constructor(settings?: NlpManagerSettings);
+        addLanguage(language: string): void;
+        addDocument(language: string, utterance: string, intent: string): void;
+        addAnswer(language: string, intent: string, answer: string): void;
+        addNamedEntityText(entity: string, option: string, languages: string[], texts: string[]): void;
+        addRegexEntity(entity: string, language: string, regex: RegExp): void;
         train(): Promise<void>;
-        process(locale: string, utterance: string): Promise<ProcessResult>;
+        process(language: string, text: string): Promise<NlpResult>;
         save(filename?: string): Promise<void>;
         load(filename?: string): Promise<void>;
-    }
-
-    export class NerManager {
-        constructor(config?: NerManagerConfig);
-        addNamedEntity(entityName: string, options?: any): void;
-        addNamedEntityText(
-            entityName: string,
-            optionName: string,
-            languages: string[],
-            texts: string[]
-        ): void;
-        findEntities(utterance: string, language: string): Promise<Entity[]>;
-    }
-
-    export class Recognizer {
-        constructor(config?: any);
-    }
-
-    export class Sentiment {
-        constructor(config?: any);
     }
 }

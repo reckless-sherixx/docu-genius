@@ -170,8 +170,8 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             console.log(`✅ PDF loaded: ${pdf.numPages} pages`);
 
-            console.log('📝 Step 2: Getting PDF data with NLP analysis...');
-            // Get PDF data from backend (includes NLP entities and saved text elements)
+            console.log('📝 Step 2: Getting PDF data...');
+            // Get PDF data from backend (includes saved text elements)
             const pdfDataResponse = await fetch(`${backendUrl}/api/pdf-editor/${templateId}/open`, {
                 headers: {
                     Authorization: `Bearer ${session?.user?.token}`,
@@ -218,8 +218,58 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 throw new Error(`Failed to prepare editable PDF: ${response.status}`);
             }
 
-            const { editablePdfUrl } = await response.json();
+            const editableResult = await response.json();
+            const { editablePdfUrl, extractedText: backendExtractedText, pages: backendPages } = editableResult;
             console.log('✅ Editable PDF URL retrieved');
+
+            // If frontend extraction failed or returned minimal results, use backend OCR text
+            if (extractedText.length < 3 && backendExtractedText && backendExtractedText.trim().length > 50) {
+                console.log('📝 Frontend extraction minimal, using backend OCR text...');
+                // Parse backend OCR text into text elements
+                // Split by lines and create basic text elements
+                const lines = backendExtractedText.split('\n').filter((line: string) => line.trim());
+                const ocrTextElements: TextElement[] = [];
+                const pageHeight = backendPages?.[0]?.height || 800;
+                const pageWidth = backendPages?.[0]?.width || 600;
+                
+                let currentY = 40; // Start from top with padding
+                const lineHeight = 24;
+                const fontSize = 16;
+                
+                lines.forEach((line: string, index: number) => {
+                    // Skip page break markers
+                    if (line.includes('--- Page Break ---')) {
+                        currentY = 40; // Reset Y for new page
+                        return;
+                    }
+                    
+                    if (line.trim()) {
+                        ocrTextElements.push({
+                            id: `ocr-text-${index}-${Date.now()}`,
+                            text: line.trim(),
+                            x: 40, // Left padding
+                            y: currentY,
+                            width: pageWidth * 2 - 80, // Full width with padding
+                            height: lineHeight * 2,
+                            fontSize: fontSize * 2, // Scaled for canvas
+                            fontFamily: 'Arial',
+                            color: '#000000',
+                            page: 1, // TODO: Handle multi-page OCR
+                            isBold: false,
+                            isItalic: false,
+                            isUnderline: false,
+                            textAlign: 'left',
+                            angle: 0,
+                        });
+                        currentY += lineHeight * 2;
+                    }
+                });
+                
+                if (ocrTextElements.length > 0) {
+                    extractedText = ocrTextElements;
+                    console.log(`✅ Created ${ocrTextElements.length} text elements from backend OCR`);
+                }
+            }
 
             console.log('🖼️ Step 5: Loading editable PDF for canvas rendering...');
             // Load the new PDF without text
@@ -404,6 +454,16 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const initializeFabricCanvases = (pages: PageCanvas[], texts: TextElement[]) => {
         console.log('🎨 Initializing Fabric.js canvases...');
 
+        // Dispose existing canvases first to prevent "already initialized" error
+        Object.values(fabricCanvases.current).forEach(canvas => {
+            try {
+                canvas.dispose();
+            } catch (e) {
+                console.warn('⚠️ Error disposing canvas:', e);
+            }
+        });
+        fabricCanvases.current = {};
+
         pages.forEach(page => {
             const canvasEl = canvasRefs.current[page.pageNumber];
             if (!canvasEl) return;
@@ -442,6 +502,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             fabricCanvas.on('selection:updated', (e: any) => handleObjectSelected(e, page.pageNumber));
             fabricCanvas.on('selection:cleared', () => handleObjectDeselected());
             fabricCanvas.on('object:modified', (e: any) => handleObjectModified(e, page.pageNumber));
+
+            // Double-click to add new text at click position
+            fabricCanvas.on('mouse:dblclick', (e: any) => handleDoubleClick(e, page.pageNumber));
 
             fabricCanvases.current[page.pageNumber] = fabricCanvas;
         });
@@ -528,6 +591,68 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const handleObjectModified = (e: any, pageNumber: number) => {
+        saveCurrentState();
+    };
+
+    const handleDoubleClick = (e: any, pageNumber: number) => {
+        // Don't add text if clicking on an existing object
+        if (e.target) return;
+
+        const canvas = fabricCanvases.current[pageNumber];
+        if (!canvas) return;
+
+        // Get click position from the event
+        const pointer = canvas.getPointer(e.e);
+        
+        addNewTextAtPosition(pageNumber, pointer.x, pointer.y);
+    };
+
+    const addNewTextAtPosition = (pageNumber: number, x: number, y: number) => {
+        const canvas = fabricCanvases.current[pageNumber];
+        if (!canvas) return;
+
+        const newTextbox = new fabric.Textbox('Type here...', {
+            left: x,
+            top: y,
+            width: 200 * scale,
+            fontSize: 16 * scale,
+            fontFamily: 'Arial',
+            fill: '#000000',
+
+            // Editing
+            editable: true,
+            selectable: true,
+
+            // Visual
+            hasControls: true,
+            hasBorders: true,
+            cornerStyle: 'circle',
+            cornerColor: '#2563eb',
+            borderColor: '#2563eb',
+            cornerSize: 8,
+            transparentCorners: false,
+
+            // Text properties
+            splitByGrapheme: false,
+            lineHeight: 1.16,
+            charSpacing: 0,
+            textAlign: 'left',
+        });
+
+        (newTextbox as any).elementId = `new-text-${Date.now()}`;
+        (newTextbox as any).pageNumber = pageNumber;
+
+        canvas.add(newTextbox);
+        canvas.setActiveObject(newTextbox);
+
+        // Auto-enter edit mode and select all text
+        newTextbox.enterEditing();
+        newTextbox.selectAll();
+
+        canvas.renderAll();
+
+        setSelectedObject(newTextbox);
+        setSelectedPage(pageNumber);
         saveCurrentState();
     };
 

@@ -242,6 +242,7 @@ export class PDFEditorController {
       console.log(`🔨 Preparing editable PDF for template: ${templateId}`);
 
       // Create a new PDF without text layer using the service
+      // Note: This creates the PDF in memory - NOT saved to S3 until user explicitly saves
       const result = await pdfEditorService.prepareEditablePDFWithoutText(
         templateId,
         organizationId
@@ -249,8 +250,12 @@ export class PDFEditorController {
 
       return res.status(200).json({
         success: true,
-        message: 'Editable PDF prepared successfully',
+        message: 'Editable PDF prepared successfully (not saved to S3 yet)',
         editablePdfUrl: result.editablePdfUrl,
+        editablePdfBase64: result.editablePdfBase64,
+        extractedText: result.extractedText,
+        totalPages: result.totalPages,
+        pages: result.pages,
       });
     } catch (error) {
       console.error('❌ Error preparing editable PDF:', error);

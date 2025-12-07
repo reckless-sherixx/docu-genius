@@ -3,9 +3,11 @@ import { TemplateStatus, TemplateType, FieldType } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { redisConnection } from '../config/redis.config.js';
+import { NlpService } from '../services/nlp.service.js';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import { createRequire } from 'module';
+import { pdf } from 'pdf-to-img';
 
 const require = createRequire(import.meta.url);
 
@@ -33,6 +35,16 @@ class TemplateProcessor {
     console.log(`🚀 Starting template processing: ${templateId}`);
 
     try {
+      // First check if template exists
+      const existingTemplate = await prisma.template.findUnique({
+        where: { id: templateId },
+      });
+
+      if (!existingTemplate) {
+        console.warn(`⚠️ Template ${templateId} not found in database. Skipping processing (may have been deleted).`);
+        return; // Exit gracefully without error
+      }
+
       // Update status to PROCESSING
       await prisma.template.update({
         where: { id: templateId },
@@ -68,10 +80,22 @@ class TemplateProcessor {
 
       console.log(`✅ Text extracted (${extractedText.length} characters)`);
 
+      // Run NLP entity extraction
+      console.log(`🧠 Running NLP entity extraction...`);
+      const nlpResult = await NlpService.NLPExtraction(extractedText);
+      console.log(`✅ NLP extraction complete: ${nlpResult.entities.length} entities, ${nlpResult.placeholders.length} placeholders found`);
+
       // Detect placeholders/fields
       console.log(`🔍 Detecting placeholders...`);
       const detectedFields = this.detectPlaceholders(extractedText);
       console.log(`✅ Detected ${detectedFields.length} fields`);
+
+      // Combine NLP entities with detected fields for storage
+      const nlpData = {
+        entities: nlpResult.entities,
+        placeholders: nlpResult.placeholders,
+        extractedAt: new Date().toISOString(),
+      };
 
       // Update template in database
       await prisma.template.update({
@@ -97,11 +121,8 @@ class TemplateProcessor {
           })),
         });
       }
-
+      
       console.log(`✅ Template processing completed: ${templateId}`);
-
-      // TODO: Emit WebSocket event to notify frontend
-      // await this.notifyFrontend(templateId, 'READY');
     } catch (error) {
       console.error(`❌ Template processing failed: ${templateId}`, error);
 
@@ -162,6 +183,7 @@ class TemplateProcessor {
 
   /**
    * Extract text from scanned PDF using OCR
+   * Converts PDF pages to images first, then runs OCR on each page
    */
   private async extractTextFromScannedPDF(buffer: Buffer): Promise<{ text: string; pages: number }> {
     console.log('🖼️ Processing scanned PDF with OCR');
@@ -176,9 +198,8 @@ class TemplateProcessor {
       if (pdfData.text.trim().length < 100) {
         console.log('🔍 Minimal text found, applying OCR...');
         
-        // Note: For production, you'd convert PDF to images first using pdf2pic or similar
-        // For now, we'll process as if it's already an image
-        const ocrText = await this.performOCR(buffer);
+        // Convert PDF to images and run OCR
+        const ocrText = await this.performOCROnPDF(buffer, pages);
         
         return {
           text: ocrText,
@@ -198,7 +219,71 @@ class TemplateProcessor {
   }
 
   /**
-   * Perform OCR on buffer using Tesseract
+   * Convert PDF pages to image buffers using pdf-to-img
+   * This is a pure JavaScript solution that works in any environment (no native binaries)
+   */
+  private async convertPDFToImages(pdfBuffer: Buffer, scale: number = 2): Promise<Buffer[]> {
+    const images: Buffer[] = [];
+    const document = await pdf(pdfBuffer, { scale });
+    
+    for await (const image of document) {
+      images.push(image);
+    }
+    
+    return images;
+  }
+
+  /**
+   * Perform OCR on a PDF by converting pages to images first
+   * Uses pdf-to-img (pure JS, works in any environment - no native binaries)
+   */
+  private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
+    console.log(`🔤 Running OCR on PDF pages...`);
+    
+    try {
+      // Convert all PDF pages to images
+      console.log('📄 Converting PDF pages to images...');
+      const images = await this.convertPDFToImages(buffer, 2);
+      const numPages = images.length;
+      
+      console.log(`✅ Converted ${numPages} pages to images`);
+      
+      // Run OCR on each page
+      const worker = await createWorker('eng');
+      let fullText = '';
+      
+      try {
+        for (let i = 0; i < numPages; i++) {
+          const imageBuffer = images[i];
+          if (!imageBuffer) continue;
+          
+          // Preprocess image with Sharp for better OCR results
+          const preprocessedBuffer = await sharp(imageBuffer)
+            .greyscale()
+            .normalize()
+            .sharpen()
+            .toBuffer();
+          
+          console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
+          const { data: { text } } = await worker.recognize(preprocessedBuffer);
+          
+          fullText += text + '\n\n--- Page Break ---\n\n';
+        }
+      } finally {
+        await worker.terminate();
+      }
+      
+      console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
+      
+      return fullText.trim();
+    } catch (error) {
+      console.error('❌ PDF OCR failed:', error);
+      throw new Error('OCR processing failed');
+    }
+  }
+
+  /**
+   * Perform OCR on an image buffer using Tesseract
    */
   private async performOCR(buffer: Buffer): Promise<string> {
     console.log('🔤 Running OCR with Tesseract...');

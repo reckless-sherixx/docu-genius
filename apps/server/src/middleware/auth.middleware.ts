@@ -21,25 +21,16 @@ export const authMiddleware = async (
     next: NextFunction
 ) => {
     try {
-        // Support both Authorization header and query parameter token
-        // Query parameter is needed for PDF.js worker which doesn't pass headers properly
-        let token: string | undefined;
-        
         const authHeader = req.headers.authorization;
-        const queryToken = req.query.token as string;
 
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else if (queryToken) {
-            token = queryToken;
-        }
-
-        if (!token) {
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 success: false,
                 message: 'No token provided',
             });
-        } 
+        }
+
+        const token = authHeader.substring(7); 
 
         // Verify token
         const decoded = AuthService.verifyToken(token);
