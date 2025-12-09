@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { templateController } from '../controllers/template-v2.controller.js';
+import { templateController } from '../controllers/template.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { upload, handleMulterError } from '../config/multer.config.js';
 

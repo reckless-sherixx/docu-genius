@@ -27,7 +27,18 @@ import {
     Minus,
     List,
     ListOrdered,
-    X
+    X,
+    Tags,
+    User,
+    Building,
+    Calendar,
+    DollarSign,
+    MapPin,
+    UserCheck,
+    Hash,
+    Mail,
+    Phone,
+    ChevronRight
 } from 'lucide-react';
 
 // Dynamically import pdfjs
@@ -72,6 +83,28 @@ interface PageCanvas {
     height: number;
 }
 
+interface NlpEntity {
+    type: string;
+    text: string;
+    start: number;
+    end: number;
+    confidence: number;
+}
+
+// Entity type colors for sidebar display
+const ENTITY_TYPE_CONFIG: Record<string, { color: string; bgColor: string; icon: React.ComponentType<{ className?: string }> }> = {
+    PERSON: { color: '#2563EB', bgColor: '#DBEAFE', icon: User },
+    ORGANIZATION: { color: '#7C3AED', bgColor: '#EDE9FE', icon: Building },
+    DATE: { color: '#059669', bgColor: '#D1FAE5', icon: Calendar },
+    MONEY: { color: '#D97706', bgColor: '#FEF3C7', icon: DollarSign },
+    LOCATION: { color: '#DC2626', bgColor: '#FEE2E2', icon: MapPin },
+    ROLE: { color: '#0891B2', bgColor: '#CFFAFE', icon: UserCheck },
+    GENDER_PRONOUN: { color: '#EC4899', bgColor: '#FCE7F3', icon: User },
+    IDENTIFIER: { color: '#6366F1', bgColor: '#E0E7FF', icon: Hash },
+    EMAIL: { color: '#0D9488', bgColor: '#CCFBF1', icon: Mail },
+    PHONE: { color: '#8B5CF6', bgColor: '#F3E8FF', icon: Phone },
+};
+
 const FONT_FAMILIES = [
     'Arial',
     'Times New Roman',
@@ -111,6 +144,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const [scale, setScale] = useState(1.0);
     const [showTextLayer, setShowTextLayer] = useState(true); // Toggle text visibility
     const [templateId, setTemplateId] = useState(initialTemplateId); // Track current template ID
+    const [showNlpSidebar, setShowNlpSidebar] = useState(false); // Toggle NLP sidebar
+    const [nlpEntities, setNlpEntities] = useState<NlpEntity[]>([]); // NLP extracted entities
+    const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set()); // Expanded entity type groups
 
     // Canvas refs
     const canvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
@@ -219,55 +255,131 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             }
 
             const editableResult = await response.json();
-            const { editablePdfUrl, extractedText: backendExtractedText, pages: backendPages } = editableResult;
+            const { editablePdfUrl, extractedText: backendExtractedText, pages: backendPages, nlpEntities: backendNlpEntities } = editableResult;
             console.log('✅ Editable PDF URL retrieved');
+
+            // Store NLP entities from backend
+            if (backendNlpEntities && backendNlpEntities.length > 0) {
+                console.log(`📊 Loaded ${backendNlpEntities.length} NLP entities from backend`);
+                setNlpEntities(backendNlpEntities);
+                // Auto-expand all entity types initially
+                const entityTypes = new Set<string>(backendNlpEntities.map((e: NlpEntity) => e.type));
+                setExpandedEntityTypes(entityTypes);
+            } else {
+                console.log('📊 No NLP entities received from backend');
+                setNlpEntities([]);
+            }
 
             // If frontend extraction failed or returned minimal results, use backend OCR text
             if (extractedText.length < 3 && backendExtractedText && backendExtractedText.trim().length > 50) {
                 console.log('📝 Frontend extraction minimal, using backend OCR text...');
-                // Parse backend OCR text into text elements
-                // Split by lines and create basic text elements
-                const lines = backendExtractedText.split('\n').filter((line: string) => line.trim());
+                // Parse backend OCR text into text elements with proper formatting
+                const rawText = backendExtractedText;
                 const ocrTextElements: TextElement[] = [];
-                const pageHeight = backendPages?.[0]?.height || 800;
-                const pageWidth = backendPages?.[0]?.width || 600;
+                const pageHeight = (backendPages?.[0]?.height || 800) * 2; // Scale for canvas
+                const pageWidth = (backendPages?.[0]?.width || 600) * 2;  // Scale for canvas
                 
-                let currentY = 40; // Start from top with padding
-                const lineHeight = 24;
-                const fontSize = 16;
+                const LEFT_MARGIN = 60;
+                const RIGHT_MARGIN = 60;
+                const TOP_MARGIN = 60;
+                const LINE_HEIGHT = 26;
+                const FONT_SIZE = 18;
+                const MAX_TEXT_WIDTH = pageWidth - LEFT_MARGIN - RIGHT_MARGIN;
+                const CHARS_PER_LINE = Math.floor(MAX_TEXT_WIDTH / (FONT_SIZE * 0.55)); // Approximate chars per line
                 
-                lines.forEach((line: string, index: number) => {
+                let currentY = TOP_MARGIN;
+                let currentPage = 1;
+                let elementIndex = 0;
+
+                const wrapTextToLines = (text: string, maxChars: number): string[] => {
+                    const words = text.split(' ');
+                    const lines: string[] = [];
+                    let currentLine = '';
+                    
+                    for (const word of words) {
+                        if (word.length > maxChars) {
+                            if (currentLine) {
+                                lines.push(currentLine);
+                                currentLine = '';
+                            }
+                            // Split long word into chunks
+                            for (let i = 0; i < word.length; i += maxChars) {
+                                lines.push(word.substring(i, i + maxChars));
+                            }
+                            continue;
+                        }
+                        
+                        const testLine = currentLine ? `${currentLine} ${word}` : word;
+                        if (testLine.length <= maxChars) {
+                            currentLine = testLine;
+                        } else {
+                            if (currentLine) lines.push(currentLine);
+                            currentLine = word;
+                        }
+                    }
+                    if (currentLine) lines.push(currentLine);
+                    return lines;
+                };
+                
+                // Split text into paragraphs
+                const paragraphs = rawText.split(/\n\n+/).filter((p: string) => p.trim());
+                
+                for (const paragraph of paragraphs) {
                     // Skip page break markers
-                    if (line.includes('--- Page Break ---')) {
-                        currentY = 40; // Reset Y for new page
-                        return;
+                    if (paragraph.includes('--- Page Break ---')) {
+                        currentPage++;
+                        currentY = TOP_MARGIN;
+                        continue;
                     }
                     
-                    if (line.trim()) {
-                        ocrTextElements.push({
-                            id: `ocr-text-${index}-${Date.now()}`,
-                            text: line.trim(),
-                            x: 40, // Left padding
-                            y: currentY,
-                            width: pageWidth * 2 - 80, // Full width with padding
-                            height: lineHeight * 2,
-                            fontSize: fontSize * 2, // Scaled for canvas
-                            fontFamily: 'Arial',
-                            color: '#000000',
-                            page: 1, // TODO: Handle multi-page OCR
-                            isBold: false,
-                            isItalic: false,
-                            isUnderline: false,
-                            textAlign: 'left',
-                            angle: 0,
-                        });
-                        currentY += lineHeight * 2;
+                    // Split paragraph into lines (preserve single newlines)
+                    const rawLines = paragraph.split('\n').filter((l: string) => l.trim());
+                    
+                    for (const rawLine of rawLines) {
+                        const trimmedLine = rawLine.trim();
+                        if (!trimmedLine) continue;
+                        
+                        // Wrap long lines to fit within page width
+                        const wrappedLines = wrapTextToLines(trimmedLine, CHARS_PER_LINE);
+                        
+                        for (const line of wrappedLines) {
+                            // Check if we need to wrap to next page
+                            if (currentY + LINE_HEIGHT > pageHeight - TOP_MARGIN) {
+                                currentPage++;
+                                currentY = TOP_MARGIN;
+                            }
+                            
+                            // Create text element for each wrapped line
+                            ocrTextElements.push({
+                                id: `ocr-text-${elementIndex}-${Date.now()}`,
+                                text: line,
+                                x: LEFT_MARGIN,
+                                y: currentY,
+                                width: MAX_TEXT_WIDTH,
+                                height: LINE_HEIGHT,
+                                fontSize: FONT_SIZE,
+                                fontFamily: 'Arial',
+                                color: '#000000',
+                                page: currentPage,
+                                isBold: false,
+                                isItalic: false,
+                                isUnderline: false,
+                                textAlign: 'left',
+                                angle: 0,
+                            });
+                            
+                            currentY += LINE_HEIGHT;
+                            elementIndex++;
+                        }
                     }
-                });
+                    
+                    // Add spacing between paragraphs
+                    currentY += LINE_HEIGHT * 0.5;
+                }
                 
                 if (ocrTextElements.length > 0) {
                     extractedText = ocrTextElements;
-                    console.log(`✅ Created ${ocrTextElements.length} text elements from backend OCR`);
+                    console.log(`✅ Created ${ocrTextElements.length} text elements from backend OCR across ${currentPage} page(s)`);
                 }
             }
 
@@ -289,7 +401,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             setLoading(false);
 
-            console.log('🎨 Step 5: Initializing Fabric.js canvases...');
             // Initialize Fabric canvases after render
             setTimeout(() => initializeFabricCanvases(pageImages, extractedText), 100);
 
@@ -301,7 +412,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const convertPagesToImages = async (pdf: any): Promise<PageCanvas[]> => {
-        console.log('🖼️ Converting PDF pages to images (already without text)...');
         const images: PageCanvas[] = [];
 
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -522,12 +632,21 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const metrics = ctx.measureText(textEl.text);
             const measuredWidth = metrics.width;
 
-            // Use the measured width with a 30% buffer for safety
-            const calculatedWidth = measuredWidth * 1.3;
-            var estimatedWidth = Math.max(calculatedWidth, textEl.width * scale * 1.2, 150 * scale);
+            // Calculate max width to keep text within page bounds
+            const pageWidth = canvas.width || 800;
+            const leftMargin = textEl.x * scale;
+            const rightMargin = 40 * scale; // Right padding
+            const maxAllowedWidth = pageWidth - leftMargin - rightMargin;
+
+            // Use measured width but cap it to page bounds
+            const calculatedWidth = Math.min(measuredWidth * 1.1, maxAllowedWidth);
+            var estimatedWidth = Math.max(calculatedWidth, Math.min(textEl.width * scale, maxAllowedWidth), 100 * scale);
         } else {
             // Fallback if canvas context not available
-            var estimatedWidth = Math.max(textEl.width * scale * 1.5, 150 * scale);
+            const pageWidth = canvas.width || 800;
+            const leftMargin = textEl.x * scale;
+            const maxAllowedWidth = pageWidth - leftMargin - 40 * scale;
+            var estimatedWidth = Math.min(Math.max(textEl.width * scale * 1.2, 100 * scale), maxAllowedWidth);
         }
 
         const textbox = new fabric.Textbox(textEl.text, {
@@ -556,9 +675,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             cornerSize: 8,
             transparentCorners: false,
 
-            // Text wrapping - disable automatic wrapping
+            // Text wrapping - enable word wrapping
             splitByGrapheme: false,
-            lineHeight: 1.16,
+            lineHeight: 1.2,
             charSpacing: 0,
 
             // Prevent auto-sizing issues
@@ -802,6 +921,65 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 canvas.renderAll();
             }
         });
+    };
+
+    // Handle entity click - find and highlight the text in the canvas
+    const handleEntityClick = (entity: NlpEntity) => {
+        console.log('🔍 Searching for entity:', entity.text, 'type:', entity.type);
+        
+        // Search through all textboxes in all canvases to find the entity text
+        let found = false;
+        
+        Object.entries(fabricCanvases.current).forEach(([pageNum, canvas]) => {
+            if (found) return;
+            
+            canvas.getObjects().forEach((obj: any) => {
+                if (found) return;
+                if (obj.type === 'textbox') {
+                    const textContent = obj.text?.toLowerCase() || '';
+                    const searchText = entity.text.toLowerCase();
+                    
+                    // Check if this textbox contains the entity text
+                    if (textContent.includes(searchText) || searchText.includes(textContent.trim())) {
+                        found = true;
+                        console.log(`✅ Found entity "${entity.text}" on page ${pageNum}`);
+                        
+                        // Scroll the canvas container to this page
+                        const canvasElement = canvasRefs.current[parseInt(pageNum)];
+                        if (canvasElement) {
+                            canvasElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        
+                        // Select and highlight the object
+                        canvas.setActiveObject(obj);
+                        setSelectedObject(obj);
+                        setSelectedPage(parseInt(pageNum));
+                        
+                        // Flash highlight effect
+                        const originalColor = obj.fill;
+                        const config = ENTITY_TYPE_CONFIG[entity.type];
+                        const highlightColor = config?.color || '#2563EB';
+                        
+                        obj.set('fill', highlightColor);
+                        canvas.renderAll();
+                        
+                        // Reset after flash
+                        setTimeout(() => {
+                            obj.set('fill', originalColor);
+                            canvas.renderAll();
+                        }, 1000);
+                        
+                        return;
+                    }
+                }
+            });
+        });
+        
+        if (!found) {
+            console.log('⚠️ Entity text not found in canvas textboxes:', entity.text);
+            // Still try to scroll to the general area based on text position
+            // The entity.start gives us the character offset in the raw text
+        }
     };
 
     const savePDF = async () => {
@@ -1251,6 +1429,17 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                             {showTextLayer ? 'Text: ON' : 'Text: OFF'}
                         </button>
 
+                        {/* Toggle NLP Entities Sidebar */}
+                        <button
+                            onClick={() => setShowNlpSidebar(!showNlpSidebar)}
+                            className={`px-3 py-2 text-sm rounded transition flex items-center gap-2 ${showNlpSidebar ? 'bg-[rgb(132,42,59)] text-white' : 'bg-gray-200 hover:bg-gray-300'
+                                }`}
+                            title={showNlpSidebar ? 'Hide NLP Entities' : 'Show NLP Entities'}
+                        >
+                            <Tags className="h-4 w-4" />
+                            Entities {nlpEntities.length > 0 && `(${nlpEntities.length})`}
+                        </button>
+
                         <div className="w-px h-6 bg-gray-300 mx-1" />
 
                         {/* Save Draft */}
@@ -1535,6 +1724,114 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                     ))}
                 </div>
                 </div>
+
+                {/* NLP Entities Sidebar */}
+                {showNlpSidebar && (
+                    <div className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+                        {/* Sidebar Header */}
+                        <div className="p-4 border-b border-gray-200 bg-gray-50">
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                                    <Tags className="h-5 w-5 text-[rgb(132,42,59)]" />
+                                    Extracted Entities
+                                </h3>
+                                <button
+                                    onClick={() => setShowNlpSidebar(false)}
+                                    className="p-1 hover:bg-gray-200 rounded transition"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {nlpEntities.length} entities found (≥80% confidence)
+                            </p>
+                        </div>
+
+                        {/* Entities List */}
+                        <div className="flex-1 overflow-auto p-2">
+                            {nlpEntities.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500">
+                                    <Tags className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                                    <p className="text-sm">No entities extracted</p>
+                                    <p className="text-xs mt-1">Entities will appear here after PDF processing</p>
+                                </div>
+                            ) : (
+                                // Group entities by type
+                                Object.entries(
+                                    nlpEntities.reduce((acc, entity) => {
+                                        if (!acc[entity.type]) acc[entity.type] = [];
+                                        acc[entity.type]!.push(entity);
+                                        return acc;
+                                    }, {} as Record<string, NlpEntity[]>)
+                                ).sort((a, b) => b[1].length - a[1].length).map(([type, entities]) => {
+                                    const config = ENTITY_TYPE_CONFIG[type] || { color: '#6B7280', bgColor: '#F3F4F6', icon: Hash };
+                                    const IconComponent = config.icon;
+                                    const isExpanded = expandedEntityTypes.has(type);
+
+                                    return (
+                                        <div key={type} className="mb-2">
+                                            {/* Entity Type Header */}
+                                            <button
+                                                onClick={() => {
+                                                    setExpandedEntityTypes(prev => {
+                                                        const newSet = new Set(prev);
+                                                        if (newSet.has(type)) {
+                                                            newSet.delete(type);
+                                                        } else {
+                                                            newSet.add(type);
+                                                        }
+                                                        return newSet;
+                                                    });
+                                                }}
+                                                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 transition"
+                                                style={{ backgroundColor: isExpanded ? config.bgColor : 'transparent' }}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <IconComponent className="h-4 w-4" style={{ color: config.color }} />
+                                                    <span className="font-medium text-sm" style={{ color: config.color }}>
+                                                        {type.replace(/_/g, ' ')}
+                                                    </span>
+                                                    <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+                                                        {entities.length}
+                                                    </span>
+                                                </div>
+                                                <ChevronRight
+                                                    className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                                />
+                                            </button>
+
+                                            {/* Entity Items */}
+                                            {isExpanded && (
+                                                <div className="ml-2 mt-1 space-y-1">
+                                                    {entities.map((entity, idx) => (
+                                                        <button
+                                                            key={`${type}-${idx}`}
+                                                            onClick={() => handleEntityClick(entity)}
+                                                            className="w-full text-left p-2 rounded-md hover:bg-gray-100 transition group"
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <span
+                                                                    className="text-sm font-medium truncate max-w-[180px]"
+                                                                    style={{ color: config.color }}
+                                                                    title={entity.text}
+                                                                >
+                                                                    {entity.text}
+                                                                </span>
+                                                                <span className="text-xs text-gray-400 ml-2">
+                                                                    {Math.round(entity.confidence * 100)}%
+                                                                </span>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                )}
 
             </div>
         </div>

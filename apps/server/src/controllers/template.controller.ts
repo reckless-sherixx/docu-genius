@@ -1,322 +1,419 @@
 import { Request, Response } from 'express';
-import { TemplateService } from '../services/template.service.js';
-import { ZodError } from 'zod';
-import { z } from 'zod';
-import { confirmUploadSchema, getUploadUrlSchema, uploadTemplateSchema } from '../schemas/template.schema.js';
-
-
+import prisma from '../lib/prisma.js';
+import { s3Service } from '../services/s3.service.js';
+import { templateQueue } from '../queues/template.queue.js';
 
 export class TemplateController {
-    // Direct upload using Multer
-    static async uploadTemplate(req: Request, res: Response) {
+
+    async directUpload(req: Request, res: Response): Promise<any> {
         try {
-            const userId = req.userId || req.user?.id;
+            const userId = (req as any).userId;
+            const file = req.file;
+            const { organizationId, name, description, category } = req.body;
 
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User not authenticated',
-                });
-            }
-
-            // Check if file exists
-            if (!req.file) {
+            if (!file) {
                 return res.status(400).json({
                     success: false,
                     message: 'No file uploaded',
                 });
             }
 
-            console.log('📤 Upload request received:', {
-                fileName: req.file.originalname,
-                fileSize: req.file.size,
-                mimeType: req.file.mimetype,
-                body: req.body
+            if (!organizationId || !name) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Missing required fields: organizationId, name',
+                });
+            }
+
+            console.log('📤 Direct upload received:', {
+                fileName: file.originalname,
+                fileSize: file.size,
+                mimeType: file.mimetype,
+                organizationId,
             });
 
-            // Validate request body
-            const validatedData = uploadTemplateSchema.parse(req.body);
+            // Upload to S3
+            const s3Key = `templates/${organizationId}/${Date.now()}-${file.originalname}`;
+            await s3Service.uploadFile(s3Key, file.buffer, file.mimetype);
 
-            // Upload file to S3 and save metadata
-            const template = await TemplateService.uploadTemplate(
-                userId,
-                validatedData.organizationId,
-                {
-                    buffer: req.file.buffer,
-                    originalname: req.file.originalname,
-                    mimetype: req.file.mimetype,
-                    size: req.file.size,
+            console.log('✅ File uploaded to S3:', s3Key);
+
+            // Create template record
+            const template = await prisma.template.create({
+                data: {
+                    template_name: file.originalname,
+                    template_description: description || null,
+                    category: category || 'General',
+                    s3_key: s3Key,
+                    file_size: BigInt(file.size),
+                    mime_type: file.mimetype,
+                    status: 'PROCESSING',
+                    uploaded_by: userId,
+                    organization_id: organizationId,
+                    is_temporary: true, // Start as temporary until user saves permanently
                 },
-                {
-                    name: validatedData.name,
-                    description: validatedData.description,
-                    category: validatedData.category,
-                }
-            );
+            });
 
-            console.log('✅ Upload successful:', template);
+            // Generate S3 URL
+            const s3Url = await s3Service.generatePresignedDownloadUrl(s3Key, 86400);
+            await prisma.template.update({
+                where: { id: template.id },
+                data: { s3_url: s3Url },
+            });
 
-            res.status(201).json({
+            // Enqueue processing job
+            console.log('📤 Enqueueing template for processing...');
+            await templateQueue.add('process-template', {
+                templateId: template.id,
+                s3Key: s3Key,
+                fileName: file.originalname,
+                mimeType: file.mimetype,
+            });
+
+            console.log('✅ Template created and queued:', template.id);
+
+            return res.status(201).json({
                 success: true,
-                message: 'Template uploaded successfully',
-                data: template,
+                message: 'File uploaded successfully',
+                data: {
+                    id: template.id,
+                    templateId: template.id,
+                    name: template.template_name,
+                    status: 'PROCESSING',
+                },
             });
         } catch (error) {
-            console.error('❌ Upload error:', error);
-            
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
+            console.error('❌ Error in direct upload:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Failed to upload file',
+                error: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
 
-    static async getUploadUrl(req: Request, res: Response) {
+    /**
+     * Step 1: Generate pre-signed URL for upload
+     */
+    async generateUploadUrl(req: Request, res: Response): Promise<any> {
         try {
-            const userId = req.userId || req.user?.id;
+            const userId = (req as any).userId;
+            const { fileName, fileType, fileSize, organizationId, name, description, category } = req.body;
 
-            if (!userId) {
-                return res.status(401).json({
+            // Validate required fields
+            if (!fileName || !fileType || !organizationId || !name) {
+                return res.status(400).json({
                     success: false,
-                    message: 'User not authenticated',
+                    message: 'Missing required fields: fileName, fileType, organizationId, name',
                 });
             }
 
-            const validatedData = getUploadUrlSchema.parse(req.body);
+            const MAX_FILE_SIZE = 10 * 1024 * 1024;
+            if (fileSize && fileSize > MAX_FILE_SIZE) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'File size exceeds maximum limit of 50MB',
+                });
+            }
 
-            // Generate presigned URL
-            const result = await TemplateService.getUploadUrl(
+            // Validate file type
+            const ALLOWED_TYPES = [
+                'application/pdf',
+                'image/jpeg',
+                'image/jpg',
+                'image/png',
+                'image/gif',
+                'image/webp',
+            ];
+
+            if (!ALLOWED_TYPES.includes(fileType)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid file type. Only PDF and images are allowed',
+                });
+            }
+
+            console.log('🔐 Generating pre-signed URL for upload:', {
+                fileName,
+                fileType,
+                organizationId,
                 userId,
-                validatedData.organizationId,
-                validatedData.fileName,
-                validatedData.mimeType
+            });
+
+            // Generate pre-signed URL
+            const { uploadUrl, key, expiresIn } = await s3Service.generatePresignedUploadUrl(
+                fileName,
+                fileType,
+                organizationId
             );
 
-            res.status(200).json({
+        
+            const template = await prisma.template.create({
+                data: {
+                    template_name: name,
+                    template_description: description || null,
+                    category: category || 'General',
+                    s3_key: key,
+                    file_size: fileSize ? BigInt(fileSize) : null,
+                    mime_type: fileType,
+                    status: 'UPLOADING',
+                    uploaded_by: userId,
+                    organization_id: organizationId,
+                    is_temporary: true, 
+                },
+            });
+
+            console.log('✅ Template created with UPLOADING status:', template.id);
+
+            return res.status(200).json({
                 success: true,
-                message: 'Upload URL generated successfully',
-                data: result,
+                message: 'Pre-signed URL generated successfully',
+                data: {
+                    uploadUrl,
+                    templateId: template.id,
+                    expiresIn,
+                },
             });
         } catch (error) {
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            console.error('Error generating upload URL:', error);
+            console.error('❌ Error generating upload URL:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Failed to generate upload URL',
+                error: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
 
-    static async confirmUpload(req: Request, res: Response) {
+    /**
+     * Step 2: Confirm upload and start processing
+     */
+    async confirmUpload(req: Request, res: Response): Promise<any> {
         try {
-            const userId = req.userId || req.user?.id;
+            const { templateId } = req.body;
 
-            if (!userId) {
-                return res.status(401).json({
+            if (!templateId) {
+                return res.status(400).json({
                     success: false,
-                    message: 'User not authenticated',
+                    message: 'templateId is required',
                 });
             }
 
-            const validatedData = confirmUploadSchema.parse(req.body);
+            console.log('✅ Confirming upload for template:', templateId);
 
-            // Confirm upload and create template record
-            const template = await TemplateService.confirmUpload(
-                userId,
-                validatedData.organizationId,
-                validatedData.fileKey,
-                {
-                    name: validatedData.name,
-                    description: validatedData.description,
-                    category: validatedData.category,
-                    size: validatedData.size,
-                    mimeType: validatedData.mimeType,
-                }
-            );
+            // Get template from database
+            const template = await prisma.template.findUnique({
+                where: { id: templateId },
+            });
 
-            res.status(201).json({
+            if (!template) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Template not found',
+                });
+            }
+
+            if (!template.s3_key) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Template S3 key is missing',
+                });
+            }
+
+            // Generate permanent S3 URL
+            const s3Url = await s3Service.generatePresignedDownloadUrl(template.s3_key, 86400); // 24 hours
+
+            // Update template with S3 URL
+            await prisma.template.update({
+                where: { id: templateId },
+                data: {
+                    s3_url: s3Url,
+                },
+            });
+
+            // Enqueue processing job
+            console.log('📤 Enqueueing template for processing...');
+            await templateQueue.add('process-template', {
+                templateId: template.id,
+                s3Key: template.s3_key,
+                fileName: template.template_name,
+                mimeType: template.mime_type || 'application/pdf',
+            });
+
+            console.log('✅ Template enqueued for processing:', templateId);
+
+            return res.status(200).json({
                 success: true,
-                message: 'Template uploaded successfully',
-                data: template,
+                message: 'Upload confirmed. Template is being processed.',
+                data: {
+                    templateId: template.id,
+                    status: 'PROCESSING',
+                },
             });
         } catch (error) {
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            console.error('Error confirming upload:', error);
+            console.error('❌ Error confirming upload:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Failed to confirm upload',
+                error: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
 
-    static async getTemplates(req: Request, res: Response) {
+    async getTemplate(req: Request, res: Response): Promise<any> {
         try {
-            const userId = req.userId || req.user?.id;
+            const { id } = req.params;
 
-            if (!userId) {
-                return res.status(401).json({
+            const template = await prisma.template.findUnique({
+                where: { id },
+                include: {
+                    fields: true,
+                },
+            });
+
+            if (!template) {
+                return res.status(404).json({
                     success: false,
-                    message: 'User not authenticated',
+                    message: 'Template not found',
                 });
             }
 
-            const { organizationId } = req.params;
+            // Convert BigInt to string for JSON serialization
+            const serializedTemplate = {
+                ...template,
+                file_size: template.file_size ? template.file_size.toString() : null,
+            };
+
+            return res.status(200).json({
+                success: true,
+                data: serializedTemplate,
+            });
+        } catch (error) {
+            console.error('❌ Error fetching template:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to fetch template',
+                error: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+
+    async getTemplates(req: Request, res: Response): Promise<any> {
+        try {
+            const { organizationId } = req.query;
 
             if (!organizationId) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Organization ID is required',
+                    message: 'organizationId is required',
                 });
             }
 
-            const templates = await TemplateService.getTemplates(organizationId);
+            // Only return permanent (saved) templates, not temporary ones
+            const templates = await prisma.template.findMany({
+                where: {
+                    organization_id: organizationId as string,
+                    is_temporary: false, 
+                },
+                include: {
+                    fields: true,
+                },
+                orderBy: {
+                    created_at: 'desc',
+                },
+            });
 
-            res.status(200).json({
+            // Convert BigInt to string
+            const serializedTemplates = templates.map((template: any) => ({
+                ...template,
+                file_size: template.file_size ? template.file_size.toString() : null,
+            }));
+
+            return res.status(200).json({
                 success: true,
-                data: templates,
+                data: serializedTemplates,
             });
         } catch (error) {
-            console.error('Error fetching templates:', error);
+            console.error('❌ Error fetching templates:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Failed to fetch templates',
+                error: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
 
-    static async getDownloadUrl(req: Request, res: Response) {
+    async deleteTemplate(req: Request, res: Response): Promise<any> {
         try {
-            const userId = req.userId || req.user?.id;
+            const { id } = req.params;
 
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User not authenticated',
-                });
-            }
-
-            const { templateId } = req.params;
-
-            if (!templateId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Template ID is required',
-                });
-            }
-
-            const result = await TemplateService.getTemplateDownloadUrl(templateId, userId);
-
-            res.status(200).json({
-                success: true,
-                data: result,
+            const template = await prisma.template.findUnique({
+                where: { id },
             });
-        } catch (error) {
-            if (error instanceof Error) {
-                return res.status(400).json({
+
+            if (!template) {
+                return res.status(404).json({
                     success: false,
-                    message: error.message,
+                    message: 'Template not found',
                 });
             }
 
-            console.error('Error getting download URL:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Internal server error',
+            // Delete from S3
+            if (template.s3_key) {
+                await s3Service.deleteFile(template.s3_key);
+            }
+
+            // Delete from database (cascade will delete fields)
+            await prisma.template.delete({
+                where: { id },
             });
-        }
-    }
 
-    static async deleteTemplate(req: Request, res: Response) {
-        try {
-            const userId = req.userId || req.user?.id;
+            console.log('✅ Template deleted:', id);
 
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User not authenticated',
-                });
-            }
-
-            const { templateId } = req.params;
-
-            if (!templateId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Template ID is required',
-                });
-            }
-
-            await TemplateService.deleteTemplate(templateId, userId);
-
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 message: 'Template deleted successfully',
             });
         } catch (error) {
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            console.error('Error deleting template:', error);
+            console.error('❌ Error deleting template:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Failed to delete template',
+                error: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
+
+    async approveTemplate(req: Request, res: Response): Promise<any> {
+        try {
+            const { id } = req.params;
+            const userId = (req as any).userId;
+
+            const template = await prisma.template.update({
+                where: { id },
+                data: {
+                    is_approved: true,
+                    approved_by: userId,
+                    approved_at: new Date(),
+                },
+            });
+
+            console.log('✅ Template approved:', id);
+
+            return res.status(200).json({
+                success: true,
+                message: 'Template approved successfully',
+                data: template,
+            });
+        } catch (error) {
+            console.error('❌ Error approving template:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to approve template',
+                error: error instanceof Error ? error.message : 'Unknown error',
             });
         }
     }
 }
+
+export const templateController = new TemplateController();

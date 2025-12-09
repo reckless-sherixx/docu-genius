@@ -190,9 +190,7 @@ export default function TemplateComponent() {
       return;
     }
 
-    try {
-      console.log('🚀 Starting upload test...');
-      
+    try {       
       const result = await uploadTemplate(selectedFile, {
         name: templateName,
         description: templateDescription || 'Template uploaded successfully',
@@ -249,16 +247,6 @@ export default function TemplateComponent() {
     setIsDragging(false);
     handleFileSelect(e.dataTransfer.files);
   };
-
-  if (!session) {
-    return (
-      <div className="flex-1 overflow-auto bg-gray-50 w-full p-8">
-        <div className="max-w-md mx-auto p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-yellow-800 text-center">Please login to access templates</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex-1 overflow-auto bg-gray-50 w-full">

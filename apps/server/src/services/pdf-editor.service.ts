@@ -6,15 +6,34 @@ import { createWorker } from 'tesseract.js';
 import { fileCleanupQueue } from '../queues/file-cleanup.queue.js';
 import { createRequire } from 'module';
 import { pdf } from 'pdf-to-img';
+import { NlpService, ExtractedEntity } from './nlp.service.js';
 
 const require = createRequire(import.meta.url);
 
 export class PDFEditorService {
 
     /**
-     * Convert PDF pages to image buffers using pdf-to-img
-     * This is a pure JavaScript solution that works in any environment (no native binaries)
+     * Post-process OCR text to fix common recognition errors
      */
+    private cleanOCRText(text: string): string {
+        return text
+            // Fix common number/symbol substitutions
+            .replace(/^4,\s/gm, '4. ')      // 4, -> 4.
+            .replace(/^&\.\s/gm, '5. ')     // &. -> 5.
+            .replace(/^\*\s/gm, '• ')       // * at line start -> bullet
+            .replace(/^»\s/gm, '• ')        // » -> bullet
+            .replace(/^\+\s/gm, '• ')       // + at line start -> bullet
+            .replace(/\|(?=[A-Za-z])/g, 'I') // |mproved -> Improved (| before letter = I)
+            .replace(/l(?=[A-Z])/g, 'I')    // lmproved -> Improved (lowercase L before uppercase)
+            .replace(/0(?=[a-zA-Z]{2})/g, 'O') // 0rder -> Order
+            .replace(/1(?=[a-z]{2})/g, 'l') // 1imited -> limited
+            .replace(/5(?=\.\s[A-Z])/g, 'S') // 5. Something -> S. (less common)
+            // Fix spacing issues
+            .replace(/\s{2,}/g, ' ')        // Multiple spaces -> single space
+            .replace(/\n{3,}/g, '\n\n')     // Multiple newlines -> double newline
+            .trim();
+    }
+
     private async convertPDFToImages(pdfBuffer: Buffer, scale: number = 2): Promise<Buffer[]> {
         const images: Buffer[] = [];
         const document = await pdf(pdfBuffer, { scale });
@@ -51,11 +70,13 @@ export class PDFEditorService {
             const isScannedPDF = template.template_type === 'SCANNED_PDF';
             console.log(`📋 Template type: ${template.template_type}, isScannedPDF: ${isScannedPDF}`);
             
-            // Extract text from original PDF first
+            // Extract text from original PDF first using pdf-parse (fast, for non-scanned PDFs)
             let extractedText = '';
             let ocrTextLines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}> = [];
             let imageScales: Array<{width: number, height: number}> = [];
+            let usedOCR = false;
             
+            // Try pdf-parse first for all PDFs
             try {
                 const parse = require('pdf-parse');
                 const parsedPdf = await parse(originalBuffer);
@@ -65,9 +86,13 @@ export class PDFEditorService {
                 console.warn('⚠️ pdf-parse failed:', parseError instanceof Error ? parseError.message : 'Unknown error');
             }
 
-            // If scanned PDF with minimal text, try OCR
-            if (isScannedPDF) {
-                console.log('🔍 Scanned PDF detected, attempting OCR...');
+            // Determine if we need OCR: either marked as scanned OR pdf-parse got minimal text
+            const needsOCR = isScannedPDF || extractedText.trim().length < 100;
+            
+            // Only use OCR if pdf-parse extracted minimal/no text (indicates scanned content)
+            if (needsOCR && extractedText.trim().length < 100) {
+                console.log('🔍 Minimal text from pdf-parse, using OCR for scanned content...');
+                console.log(`📝 Current extractedText length: ${extractedText.length}`);
                 try {
                     // Get image dimensions for scaling calculations
                     console.log('📸 Converting PDF pages to images...');
@@ -80,28 +105,56 @@ export class PDFEditorService {
                         console.log(`📐 Image size: ${metadata.width}x${metadata.height}`);
                     }
                     
-                    console.log('🔤 Running OCR on images...');
+                    console.log('🔤 Running OCR with positions on images...');
                     const ocrResult = await this.performOCROnPDFWithPositions(originalBuffer, originalPages.length);
                     extractedText = ocrResult.fullText;
                     ocrTextLines = ocrResult.lines;
-                    console.log(`✅ OCR extracted ${ocrTextLines.length} text lines`);
+                    usedOCR = true;
+                    console.log(`✅ OCR extracted ${ocrTextLines.length} text lines from ${originalPages.length} pages`);
+                    
+                    // Log sample lines
+                    if (ocrTextLines.length > 0) {
+                        console.log(`📝 Sample OCR lines:`);
+                        for (const line of ocrTextLines.slice(0, 3)) {
+                            console.log(`   - "${line.text.substring(0, 40)}..." at (${line.x}, ${line.y})`);
+                        }
+                    } else {
+                        console.log(`⚠️ No OCR lines extracted! Check Tesseract output.`);
+                    }
                 } catch (ocrError) {
                     console.error('❌ OCR failed:', ocrError instanceof Error ? ocrError.message : 'Unknown error');
-                    console.error(ocrError);
+                    console.error('❌ Full OCR error:', ocrError);
                 }
+            } else if (extractedText.trim().length >= 100) {
+                console.log('✅ pdf-parse extracted sufficient text, skipping OCR');
+            }
+            
+            // Run NLP extraction on the text (for both scanned and regular PDFs)
+            console.log('🧠 Running NLP entity extraction...');
+            let nlpEntities: ExtractedEntity[] = [];
+            let nlpPlaceholders: ExtractedEntity[] = [];
+            
+            try {
+                const nlpResult = await NlpService.NLPExtraction(extractedText);
+                console.log(`📊 Raw NLP result: ${nlpResult.entities.length} entities, ${nlpResult.placeholders.length} placeholders`);
+                
+                // Log all entities with their confidence
+                for (const e of nlpResult.entities.slice(0, 10)) {
+                    console.log(`   Entity: "${e.text}" (${e.type}) confidence: ${(e.confidence * 100).toFixed(1)}%`);
+                }
+                
+                // Filter entities with confidence > 80%
+                nlpEntities = nlpResult.entities.filter(e => e.confidence >= 0.8);
+                nlpPlaceholders = nlpResult.placeholders.filter(e => e.confidence >= 0.8);
+                console.log(`✅ NLP found ${nlpEntities.length} entities with ≥80% confidence (filtered from ${nlpResult.entities.length})`);
+                console.log(`   Entity types: ${[...new Set(nlpEntities.map(e => e.type))].join(', ') || 'none'}`);
+            } catch (nlpError) {
+                console.error('❌ NLP extraction failed:', nlpError instanceof Error ? nlpError.message : 'Unknown error');
             }
             
             // Create new PDF
             const newPdfDoc = await PDFDocument.create();
             const pageData = [];
-            
-            // Always create BLANK pages - text will be rendered by frontend as editable elements
-            // The extracted text (from pdf-parse or OCR) is sent separately to frontend
-            console.log('📄 Creating blank PDF pages (text will be rendered by frontend)...');
-            console.log(`🔢 isScannedPDF: ${isScannedPDF}, ocrTextLines.length: ${ocrTextLines.length}`);
-            
-            // Embed font for text (used only if we need to draw OCR text for scanned PDFs)
-            const font = await newPdfDoc.embedFont(StandardFonts.Helvetica);
             
             for (let i = 0; i < originalPages.length; i++) {
                 const originalPage = originalPages[i];
@@ -109,119 +162,11 @@ export class PDFEditorService {
                 
                 const { width: pdfWidth, height: pdfHeight } = originalPage.getSize();
                 
-                // Create blank page with same dimensions
+                // Create blank page with same dimensions - NO text embedded
                 const newPage = newPdfDoc.addPage([pdfWidth, pdfHeight]);
                 
-                // For scanned PDFs with OCR text, embed text at original positions
-                // (since pdf-parse won't extract text and frontend can't extract from scanned images)
-                console.log(`📄 Page ${i + 1}: checking if scanned PDF (${isScannedPDF}) && ocrTextLines (${ocrTextLines.length})`);
-                if (isScannedPDF && ocrTextLines.length > 0) {
-                    // Get image dimensions for this page (for scaling OCR coordinates)
-                    const imgScale = imageScales[i] || { width: pdfWidth * 2, height: pdfHeight * 2 };
-                    const scaleX = pdfWidth / imgScale.width;
-                    const scaleY = pdfHeight / imgScale.height;
-                    
-                    // Page margins to prevent text from touching edges
-                    const PAGE_MARGIN = 20;
-                    const maxTextWidth = pdfWidth - PAGE_MARGIN;
-                    
-                    // Get OCR lines for this page
-                    const pageLines = ocrTextLines.filter(line => line.pageIndex === i);
-                    
-                    // Draw OCR text at their original positions
-                    for (const lineData of pageLines) {
-                        const text = lineData.text.trim();
-                        if (!text) continue;
-                        
-                        // Scale OCR coordinates to PDF coordinates
-                        let x = Math.max(PAGE_MARGIN / 2, lineData.x * scaleX);
-                        // PDF coordinates are from bottom-left, OCR from top-left
-                        const y = pdfHeight - (lineData.y * scaleY) - (lineData.fontSize * scaleY);
-                        let fontSize = Math.max(6, Math.min(18, lineData.fontSize * scaleY));
-                        
-                        // Skip if position is outside page bounds
-                        if (y < 0 || y > pdfHeight) continue;
-                        
-                        // Calculate available width from x position to right margin
-                        const availableWidth = maxTextWidth - x;
-                        
-                        // Calculate text width and adjust if needed
-                        let textWidth = font.widthOfTextAtSize(text, fontSize);
-                        
-                        // If text would overflow, reduce font size to fit
-                        if (textWidth > availableWidth && availableWidth > 50) {
-                            // Calculate the scale factor needed to fit
-                            const scaleFactor = availableWidth / textWidth;
-                            fontSize = Math.max(5, fontSize * scaleFactor * 0.95); // 0.95 for safety margin
-                            textWidth = font.widthOfTextAtSize(text, fontSize);
-                        }
-                        
-                        // If still too wide after font reduction, wrap the text
-                        if (textWidth > availableWidth) {
-                            // Split text into words and draw in multiple lines
-                            const words = text.split(' ');
-                            let currentLine = '';
-                            let currentY = y;
-                            const lineHeight = fontSize * 1.2;
-                            
-                            for (const word of words) {
-                                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                                const testWidth = font.widthOfTextAtSize(testLine, fontSize);
-                                
-                                if (testWidth <= availableWidth) {
-                                    currentLine = testLine;
-                                } else {
-                                    // Draw current line and start new one
-                                    if (currentLine) {
-                                        try {
-                                            newPage.drawText(currentLine, {
-                                                x: x,
-                                                y: currentY,
-                                                size: fontSize,
-                                                font,
-                                                color: rgb(0, 0, 0),
-                                            });
-                                        } catch (e) { /* skip */ }
-                                        currentY -= lineHeight;
-                                    }
-                                    currentLine = word;
-                                }
-                            }
-                            // Draw remaining text
-                            if (currentLine && currentY > 0) {
-                                try {
-                                    newPage.drawText(currentLine, {
-                                        x: x,
-                                        y: currentY,
-                                        size: fontSize,
-                                        font,
-                                        color: rgb(0, 0, 0),
-                                    });
-                                } catch (e) { /* skip */ }
-                            }
-                        } else {
-                            // Text fits, draw normally
-                            try {
-                                newPage.drawText(text, {
-                                    x: x,
-                                    y: y,
-                                    size: fontSize,
-                                    font,
-                                    color: rgb(0, 0, 0),
-                                });
-                            } catch (drawError) {
-                                // Skip problematic characters
-                                console.warn(`⚠️ Could not draw text: "${text.substring(0, 20)}..."`);
-                            }
-                        }
-                    }
-                    
-                    console.log(`✅ Page ${i + 1} created with ${pageLines.length} OCR text elements (${pdfWidth.toFixed(0)}x${pdfHeight.toFixed(0)})`);
-                } else {
-                    // For regular text PDFs, just create blank page
-                    // Text will be extracted by frontend using pdfjs and rendered as editable elements
-                    console.log(`✅ Page ${i + 1} created as blank (${pdfWidth.toFixed(0)}x${pdfHeight.toFixed(0)})`);
-                }
+                // Just log page creation - no text drawing
+                console.log(`✅ Page ${i + 1} created as blank (${pdfWidth}x${pdfHeight})`);
                 
                 pageData.push({
                     pageNumber: i + 1,
@@ -238,15 +183,27 @@ export class PDFEditorService {
             const pdfBase64 = pdfBuffer.toString('base64');
             const editablePdfDataUrl = `data:application/pdf;base64,${pdfBase64}`;
             
-            console.log('✅ Editable PDF created in memory (not saved to S3 yet)');
-            
             return {
                 editablePdfUrl: editablePdfDataUrl,
                 editablePdfBase64: pdfBase64,
                 extractedText,
                 totalPages: originalPages.length,
                 pages: pageData,
-                // No s3Key returned - PDF is not saved yet
+                // NLP entities with confidence >= 80%
+                nlpEntities: nlpEntities.map(e => ({
+                    type: e.type,
+                    text: e.text,
+                    start: e.start,
+                    end: e.end,
+                    confidence: e.confidence,
+                })),
+                nlpPlaceholders: nlpPlaceholders.map(e => ({
+                    type: e.type,
+                    text: e.text,
+                    start: e.start,
+                    end: e.end,
+                    confidence: e.confidence,
+                })),
             };
         } catch (error) {
             console.error('❌ Error creating editable PDF without text:', error);
@@ -299,7 +256,6 @@ export class PDFEditorService {
                 extractedText = parsedPdf.text || '';
             } catch (parseError) {
                 console.warn('⚠️ pdf-parse failed, continuing without extracted text:', parseError instanceof Error ? parseError.message : 'Unknown error');
-                // Continue without extracted text - the frontend will handle text extraction
             }
 
             const pdfData = {
@@ -392,31 +348,42 @@ export class PDFEditorService {
         try {
             // Convert all PDF pages to images
             console.log(`📄 Converting PDF pages to images...`);
-            const images = await this.convertPDFToImages(buffer, 2);
+            const images = await this.convertPDFToImages(buffer, 3); // Higher scale for better OCR
             const numPages = images.length;
             
             console.log(`✅ Converted ${numPages} pages to images`);
             
-            // Run OCR on each page
-            const worker = await createWorker('eng');
+            // Run OCR on each page using tessdata_best for higher accuracy
+            const worker = await createWorker('eng', 1, {
+                langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
+                gzip: false,
+            });
             let fullText = '';
+            
+            // Set Tesseract parameters for better accuracy
+            await worker.setParameters({
+                preserve_interword_spaces: '1',
+            });
             
             try {
                 for (let i = 0; i < numPages; i++) {
                     const imageBuffer = images[i];
                     if (!imageBuffer) continue;
-                    
-                    // Preprocess image with Sharp for better OCR results
+            
                     const preprocessedBuffer = await sharp(imageBuffer)
-                        .greyscale()
-                        .normalize()
-                        .sharpen()
+                        .greyscale()                              // Convert to grayscale
+                        .normalize()                              // Auto-level contrast
+                        .modulate({ brightness: 1.1 })            // Slightly brighten
+                        .sharpen({ sigma: 2, m1: 1, m2: 0.5 })    // Sharpen text edges
+                        .gamma(1.2)                               // Adjust gamma for better contrast
                         .toBuffer();
                     
                     console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
                     const { data: { text } } = await worker.recognize(preprocessedBuffer);
                     
-                    fullText += text + '\n\n--- Page Break ---\n\n';
+                    // Clean up common OCR errors
+                    const cleanedText = this.cleanOCRText(text);
+                    fullText += cleanedText + '\n\n--- Page Break ---\n\n';
                 }
             } finally {
                 await worker.terminate();
@@ -424,17 +391,13 @@ export class PDFEditorService {
             
             console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
             
-            return fullText.trim();
+            return this.cleanOCRText(fullText.trim());
         } catch (error) {
             console.error('❌ PDF OCR failed:', error);
             throw new Error('OCR processing failed');
         }
     }
 
-    /**
-     * Perform OCR on a PDF and return text with page indices and positions
-     * Uses pdf-to-img (pure JS, works in any environment - no native binaries)
-     */
     private async performOCROnPDFWithPositions(buffer: Buffer, pageCount: number): Promise<{
         fullText: string;
         lines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}>;
@@ -442,16 +405,25 @@ export class PDFEditorService {
         console.log(`🔤 Running OCR with positions on PDF pages...`);
         
         try {
-            // Convert all PDF pages to images
+            // Convert all PDF pages to images at higher resolution for better OCR
             console.log(`📄 Converting PDF pages to images for OCR...`);
-            const images = await this.convertPDFToImages(buffer, 2);
+            const images = await this.convertPDFToImages(buffer, 3); // Scale 3 = 300 DPI equivalent
             const numPages = images.length;
             
             console.log(`✅ Converted ${numPages} pages to images`);
             
-            const worker = await createWorker('eng');
+            // Use tessdata_best for higher accuracy (slower but more accurate)
+            const worker = await createWorker('eng', 1, {
+                langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
+                gzip: false,
+            });
             let fullText = '';
             const allLines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}> = [];
+            
+            // Set Tesseract parameters for better accuracy
+            await worker.setParameters({
+                preserve_interword_spaces: '1',  // Preserve spacing
+            });
             
             try {
                 for (let i = 0; i < numPages; i++) {
@@ -463,10 +435,13 @@ export class PDFEditorService {
                     const imageWidth = imageMetadata.width || 1;
                     const imageHeight = imageMetadata.height || 1;
                     
+                    // Better preprocessing for OCR - avoid harsh binarization
                     const preprocessedBuffer = await sharp(imageBuffer)
-                        .greyscale()
-                        .normalize()
-                        .sharpen()
+                        .greyscale()                        // Convert to grayscale
+                        .normalize()                        // Auto-level contrast
+                        .modulate({ brightness: 1.1 })      // Slightly brighten
+                        .sharpen({ sigma: 2, m1: 1, m2: 0.5 }) // Sharpen text edges
+                        .gamma(1.2)                         // Adjust gamma for better contrast
                         .toBuffer();
                     
                     console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
@@ -510,7 +485,13 @@ export class PDFEditorService {
             
             console.log(`✅ OCR completed, extracted ${allLines.length} positioned lines from ${numPages} pages`);
             
-            return { fullText: fullText.trim(), lines: allLines };
+            // Clean the text and also clean each line
+            const cleanedLines = allLines.map(line => ({
+                ...line,
+                text: this.cleanOCRText(line.text)
+            }));
+            
+            return { fullText: this.cleanOCRText(fullText.trim()), lines: cleanedLines };
         } catch (error) {
             console.error('❌ PDF OCR with positions failed:', error);
             throw new Error('OCR processing failed');
@@ -521,16 +502,23 @@ export class PDFEditorService {
      * Perform OCR on an image buffer using Tesseract
      */
     private async performOCR(buffer: Buffer): Promise<string> {
-        console.log('🔤 Running OCR with Tesseract...');
+        console.log('🔤 Running OCR with Tesseract (tessdata_best)...');
 
-        const worker = await createWorker('eng');
+        // Use tessdata_best for higher accuracy
+        const worker = await createWorker('eng', 1, {
+            langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
+            gzip: false,
+        });
 
         try {
             // Preprocess with Sharp for better OCR accuracy
+            // Avoid harsh binarization which causes character misrecognition
             const preprocessedBuffer = await sharp(buffer)
-                .greyscale()
-                .normalize()
-                .sharpen()
+                .greyscale()                              // Convert to grayscale
+                .normalize()                              // Auto-level contrast
+                .modulate({ brightness: 1.1 })            // Slightly brighten
+                .sharpen({ sigma: 2, m1: 1, m2: 0.5 })    // Sharpen text edges
+                .gamma(1.2)                               // Adjust gamma
                 .toBuffer();
 
             const {
@@ -539,7 +527,7 @@ export class PDFEditorService {
 
             console.log(`✅ OCR completed, extracted ${text.length} characters`);
 
-            return text;
+            return this.cleanOCRText(text);
         } catch (error) {
             console.error('❌ OCR failed:', error);
             throw new Error('OCR processing failed');

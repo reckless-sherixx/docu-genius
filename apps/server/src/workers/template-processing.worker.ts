@@ -26,9 +26,6 @@ interface ExtractedField {
 }
 
 class TemplateProcessor {
-  /**
-   * Main processing function
-   */
   async processTemplate(job: Job<TemplateProcessJob>): Promise<void> {
     const { templateId, s3Key, fileName, mimeType } = job.data;
 
@@ -156,7 +153,7 @@ class TemplateProcessor {
       return hasTextContent ? TemplateType.TEXT_PDF : TemplateType.SCANNED_PDF;
     }
 
-    return TemplateType.TEXT_PDF; // Default
+    return TemplateType.TEXT_PDF; 
   }
 
   /**
