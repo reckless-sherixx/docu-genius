@@ -48,12 +48,12 @@ export class OrganizationService {
                 }
             });
 
-            // Add the creator as an OWNER member
+            // Add the creator as a CREATOR member
             await prisma.organizationMember.create({
                 data: {
                     organization_id: organization.id,
                     user_id: data.organization_head_id,
-                    role: 'OWNER',
+                    role: 'ADMIN',
                 }
             });
 
@@ -97,12 +97,12 @@ export class OrganizationService {
                 throw new Error('You are already a member of this organization');
             }
 
-            // Add user as a MEMBER
+            // Add user as an ADMIN
             const member = await prisma.organizationMember.create({
                 data: {
                     organization_id: organization.id,
                     user_id: userId,
-                    role: 'MEMBER',
+                    role: 'ADMIN',
                 }
             });
 

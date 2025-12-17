@@ -20,9 +20,8 @@ enum InvitationStatus {
 }
 
 enum MemberRole {
-  OWNER
   ADMIN
-  MEMBER
+  CREATOR
 }
 
 enum TemplateStatus {
@@ -55,6 +54,7 @@ model User {
   name                    String               @db.VarChar(191)
   email                   String               @unique
   password                String
+  document_generation_pin Int?
   password_reset_token    String?
   token_send_at           DateTime?
   email_verified_at       DateTime?
@@ -82,7 +82,7 @@ model OrganizationMember {
   id              String       @id @default(uuid())
   organization_id String
   user_id         String
-  role            MemberRole   @default(MEMBER)
+  role            MemberRole   @default(CREATOR)
   joined_at       DateTime     @default(now())
   organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -97,7 +97,7 @@ model OrganizationInvite {
   organization_id  String
   email            String
   invited_by       String
-  role             MemberRole       @default(MEMBER)
+  role             MemberRole       @default(CREATOR)
   invitation_token String           @unique
   status           InvitationStatus @default(PENDING)
   expires_at       DateTime
@@ -115,37 +115,37 @@ model Template {
   template_name        String         @db.VarChar(191)
   template_description String?
   category             String?        @default("General")
-  s3_key               String?  
-  s3_url               String?  
-  file_size            BigInt?  
-  mime_type            String?  
+  s3_key               String?
+  s3_url               String?
+  file_size            BigInt?
+  mime_type            String?
   status               TemplateStatus @default(UPLOADING)
   template_type        TemplateType?
-  uploaded_by          String?  
+  uploaded_by          String?
   organization_id      String?
-  
+
   // Processing fields
-  extracted_text       String?        @db.Text
-  total_pages          Int?
-  processing_started_at DateTime?
+  extracted_text          String?   @db.Text
+  total_pages             Int?
+  processing_started_at   DateTime?
   processing_completed_at DateTime?
-  processing_error     String?        @db.Text
-  
+  processing_error        String?   @db.Text
+
   // Approval workflow
-  is_approved          Boolean        @default(false)
-  approved_by          String?
-  approved_at          DateTime?
-  
+  is_approved Boolean   @default(false)
+  approved_by String?
+  approved_at DateTime?
+
   // Temporary file management
-  is_temporary         Boolean        @default(false)
-  expires_at           DateTime?
-  parent_template_id   String?        
-  
-  created_at           DateTime       @default(now())
-  updated_at           DateTime       @updatedAt
-  
-  fields               TemplateField[]
-  versions             TemplateVersion[]
+  is_temporary       Boolean   @default(false)
+  expires_at         DateTime?
+  parent_template_id String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  fields   TemplateField[]
+  versions TemplateVersion[]
 
   @@index([organization_id])
   @@index([uploaded_by])
@@ -154,18 +154,18 @@ model Template {
 }
 
 model TemplateField {
-  id            String    @id @default(uuid())
-  template_id   String
-  field_name    String    @db.VarChar(191)
-  field_type    FieldType @default(TEXT)
-  placeholder   String    
-  is_required   Boolean   @default(true)
-  default_value String?
-  validation_rules Json?  
-  position_data Json?     
-  
-  created_at    DateTime  @default(now())
-  template      Template  @relation(fields: [template_id], references: [id], onDelete: Cascade)
+  id               String    @id @default(uuid())
+  template_id      String
+  field_name       String    @db.VarChar(191)
+  field_type       FieldType @default(TEXT)
+  placeholder      String
+  is_required      Boolean   @default(true)
+  default_value    String?
+  validation_rules Json?
+  position_data    Json?
+
+  created_at DateTime @default(now())
+  template   Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
 
   @@index([template_id])
 }
@@ -179,8 +179,8 @@ model TemplateVersion {
   changes     String?  @db.Text
   created_by  String?
   created_at  DateTime @default(now())
-  
-  template    Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  template Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
 
   @@unique([template_id, version])
   @@index([template_id])

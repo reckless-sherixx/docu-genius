@@ -38,7 +38,10 @@ import {
     Hash,
     Mail,
     Phone,
-    ChevronRight
+    ChevronRight,
+    Clock,
+    Gift,
+    FileText
 } from 'lucide-react';
 
 // Dynamically import pdfjs
@@ -103,6 +106,9 @@ const ENTITY_TYPE_CONFIG: Record<string, { color: string; bgColor: string; icon:
     IDENTIFIER: { color: '#6366F1', bgColor: '#E0E7FF', icon: Hash },
     EMAIL: { color: '#0D9488', bgColor: '#CCFBF1', icon: Mail },
     PHONE: { color: '#8B5CF6', bgColor: '#F3E8FF', icon: Phone },
+    DURATION: { color: '#F59E0B', bgColor: '#FEF3C7', icon: Clock },
+    BENEFIT: { color: '#10B981', bgColor: '#D1FAE5', icon: Gift },
+    LEGAL_TERM: { color: '#6B7280', bgColor: '#F3F4F6', icon: FileText },
 };
 
 const FONT_FAMILIES = [
@@ -923,12 +929,14 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         });
     };
 
-    // Handle entity click - find and highlight the text in the canvas
+    // Handle entity click - find and highlight only the specific entity text in the canvas
     const handleEntityClick = (entity: NlpEntity) => {
         console.log('🔍 Searching for entity:', entity.text, 'type:', entity.type);
         
         // Search through all textboxes in all canvases to find the entity text
         let found = false;
+        const config = ENTITY_TYPE_CONFIG[entity.type];
+        const highlightColor = config?.color || '#2563EB';
         
         Object.entries(fabricCanvases.current).forEach(([pageNum, canvas]) => {
             if (found) return;
@@ -936,13 +944,17 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             canvas.getObjects().forEach((obj: any) => {
                 if (found) return;
                 if (obj.type === 'textbox') {
-                    const textContent = obj.text?.toLowerCase() || '';
+                    const textContent = obj.text || '';
+                    const textContentLower = textContent.toLowerCase();
                     const searchText = entity.text.toLowerCase();
                     
-                    // Check if this textbox contains the entity text
-                    if (textContent.includes(searchText) || searchText.includes(textContent.trim())) {
+                    // Find the exact position of the entity within the textbox
+                    const startIndex = textContentLower.indexOf(searchText);
+                    
+                    if (startIndex !== -1) {
                         found = true;
-                        console.log(`✅ Found entity "${entity.text}" on page ${pageNum}`);
+                        const endIndex = startIndex + entity.text.length;
+                        console.log(`✅ Found entity "${entity.text}" on page ${pageNum} at position ${startIndex}-${endIndex}`);
                         
                         // Scroll the canvas container to this page
                         const canvasElement = canvasRefs.current[parseInt(pageNum)];
@@ -950,24 +962,39 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                             canvasElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }
                         
-                        // Select and highlight the object
+                        // Select the textbox first
                         canvas.setActiveObject(obj);
                         setSelectedObject(obj);
                         setSelectedPage(parseInt(pageNum));
                         
-                        // Flash highlight effect
-                        const originalColor = obj.fill;
-                        const config = ENTITY_TYPE_CONFIG[entity.type];
-                        const highlightColor = config?.color || '#2563EB';
+                        // Use Fabric.js text selection to highlight just the entity text
+                        // Enter editing mode to show selection
+                        obj.enterEditing();
+                        obj.selectionStart = startIndex;
+                        obj.selectionEnd = endIndex;
                         
-                        obj.set('fill', highlightColor);
+                        // Apply highlight styling to selected text
+                        obj.setSelectionStyles({
+                            fill: highlightColor,
+                            textBackgroundColor: config?.bgColor || '#DBEAFE',
+                        }, startIndex, endIndex);
+                        
                         canvas.renderAll();
                         
-                        // Reset after flash
+                        // Exit editing mode after a brief moment but keep the highlight
                         setTimeout(() => {
-                            obj.set('fill', originalColor);
+                            obj.exitEditing();
                             canvas.renderAll();
-                        }, 1000);
+                            
+                            // Remove highlight after 3 seconds
+                            setTimeout(() => {
+                                obj.setSelectionStyles({
+                                    fill: '#000000',
+                                    textBackgroundColor: '',
+                                }, startIndex, endIndex);
+                                canvas.renderAll();
+                            }, 3000);
+                        }, 100);
                         
                         return;
                     }
@@ -977,8 +1004,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         
         if (!found) {
             console.log('⚠️ Entity text not found in canvas textboxes:', entity.text);
-            // Still try to scroll to the general area based on text position
-            // The entity.start gives us the character offset in the raw text
         }
     };
 

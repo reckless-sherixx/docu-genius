@@ -20,6 +20,12 @@ export enum EntityType {
     EMAIL = 'EMAIL',
     /** Phone numbers (for contact information) */
     PHONE = 'PHONE',
+    /** Duration/Period (for employment/contract terms) */
+    DURATION = 'DURATION',
+    /** Benefits and compensation items */
+    BENEFIT = 'BENEFIT',
+    /** Legal terms and clauses */
+    LEGAL_TERM = 'LEGAL_TERM',
 }
 
 // PERSON ENTITY TRAINING DATA
@@ -562,6 +568,118 @@ export const DATE_WORDS = [
 ];
 
 // =============================================================================
+// HR/LEGAL DOCUMENT SPECIFIC TRAINING DATA
+// =============================================================================
+
+/**
+ * HR Document Keywords - helps identify context for offer letters, employment contracts
+ */
+export const HR_DOCUMENT_KEYWORDS = [
+    // Offer Letter Keywords
+    'offer letter', 'job offer', 'employment offer', 'position of', 'role of',
+    'we are pleased to offer', 'pleased to extend', 'pleased to confirm',
+    'accept this offer', 'offer of employment', 'contingent upon',
+    'start date', 'joining date', 'commencement date', 'effective date',
+    'reporting to', 'reports to', 'report directly',
+    
+    // Salary & Compensation
+    'annual salary', 'base salary', 'gross salary', 'net salary', 'monthly salary',
+    'compensation package', 'total compensation', 'remuneration',
+    'per annum', 'per month', 'per year', 'p.a.', 'CTC', 'cost to company',
+    'signing bonus', 'joining bonus', 'performance bonus', 'annual bonus',
+    'variable pay', 'incentive', 'commission', 'stock options', 'equity',
+    'RSU', 'restricted stock units', 'ESOP', 'employee stock',
+    
+    // Benefits
+    'health insurance', 'medical insurance', 'dental insurance', 'vision insurance',
+    'life insurance', 'disability insurance', 'retirement plan', '401k', '401(k)',
+    'pension', 'provident fund', 'PF', 'gratuity', 'leave encashment',
+    'paid time off', 'PTO', 'vacation days', 'sick leave', 'personal leave',
+    'maternity leave', 'paternity leave', 'parental leave', 'bereavement leave',
+    'work from home', 'WFH', 'remote work', 'hybrid work', 'flexible hours',
+    'relocation assistance', 'relocation bonus', 'housing allowance',
+    'travel allowance', 'transport allowance', 'meal allowance', 'phone allowance',
+    
+    // Employment Terms
+    'probation period', 'probationary period', 'notice period', 'termination',
+    'at-will employment', 'employment at will', 'full-time', 'part-time',
+    'permanent position', 'temporary position', 'contract position',
+    'non-compete', 'non-disclosure', 'confidentiality', 'intellectual property',
+    'background check', 'reference check', 'drug test', 'verification',
+];
+
+/**
+ * Legal Document Keywords - for NDAs, service agreements, contracts
+ */
+export const LEGAL_DOCUMENT_KEYWORDS = [
+    // NDA Keywords
+    'non-disclosure agreement', 'NDA', 'confidentiality agreement',
+    'confidential information', 'proprietary information', 'trade secrets',
+    'disclosing party', 'receiving party', 'parties agree',
+    'shall not disclose', 'agree to keep confidential', 'maintain confidentiality',
+    
+    // Contract Keywords
+    'hereby agrees', 'hereinafter referred', 'herein', 'whereas', 'therefore',
+    'terms and conditions', 'subject to', 'in accordance with', 'pursuant to',
+    'governed by', 'jurisdiction', 'arbitration', 'dispute resolution',
+    'indemnify', 'indemnification', 'liability', 'limitation of liability',
+    'warranty', 'warranties', 'representations', 'force majeure',
+    'termination clause', 'breach', 'remedy', 'remedies', 'damages',
+    'binding agreement', 'legally binding', 'executed', 'duly authorized',
+    
+    // Service Agreement Keywords
+    'scope of services', 'scope of work', 'deliverables', 'milestones',
+    'service level agreement', 'SLA', 'statement of work', 'SOW',
+    'consulting agreement', 'consulting services', 'professional services',
+    'independent contractor', 'subcontractor', 'vendor', 'supplier',
+    'payment terms', 'invoice', 'net 30', 'net 60', 'upon completion',
+    'retainer', 'hourly rate', 'fixed fee', 'project fee',
+    
+    // Signature/Execution
+    'signature', 'signed by', 'executed by', 'authorized signatory',
+    'witness', 'witnessed by', 'notarized', 'notary public',
+    'in witness whereof', 'by signing below', 'date of execution',
+];
+
+/**
+ * Duration/Period patterns for employment terms
+ */
+export const DURATION_TERMS = [
+    // Probation periods
+    '3 months', '6 months', '90 days', '30 days', '60 days', '180 days',
+    'three months', 'six months', 'ninety days', 'thirty days',
+    
+    // Notice periods  
+    '1 month', '2 months', '2 weeks', '4 weeks', '1 week',
+    'one month', 'two months', 'two weeks', 'four weeks', 'one week',
+    
+    // Contract durations
+    '1 year', '2 years', '3 years', '5 years', '12 months', '24 months',
+    'one year', 'two years', 'three years', 'five years',
+    'annual', 'biannual', 'multi-year',
+    
+    // Time references
+    'immediately', 'upon signing', 'upon execution', 'forthwith',
+    'within', 'no later than', 'not exceeding', 'minimum of', 'maximum of',
+];
+
+/**
+ * Benefits and compensation terms
+ */
+export const BENEFIT_TERMS = [
+    'health insurance', 'medical coverage', 'dental plan', 'vision plan',
+    'life insurance', '401k match', 'retirement benefits', 'pension plan',
+    'stock options', 'equity grant', 'RSU', 'ESOP', 'profit sharing',
+    'paid vacation', 'PTO', 'sick days', 'personal days', 'holidays',
+    'maternity leave', 'paternity leave', 'family leave', 'FMLA',
+    'tuition reimbursement', 'education assistance', 'training budget',
+    'gym membership', 'wellness program', 'mental health support',
+    'commuter benefits', 'parking', 'transit pass', 'company car',
+    'meal stipend', 'phone allowance', 'internet allowance', 'home office stipend',
+    'relocation package', 'signing bonus', 'annual bonus', 'performance bonus',
+];
+
+// =============================================================================
 // REGEX PATTERNS FOR STRUCTURED DATA
 // =============================================================================
 
@@ -633,6 +751,12 @@ export const NLP_TRAINING_DATA = {
         daysOfWeek: DAYS_OF_WEEK,
         dateWords: DATE_WORDS,
     },
+    
+    // HR/Legal document specific
+    hrKeywords: HR_DOCUMENT_KEYWORDS,
+    legalKeywords: LEGAL_DOCUMENT_KEYWORDS,
+    durationTerms: DURATION_TERMS,
+    benefitTerms: BENEFIT_TERMS,
     
     // Regex patterns
     patterns: REGEX_PATTERNS,

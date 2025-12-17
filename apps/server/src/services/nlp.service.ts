@@ -12,6 +12,10 @@ import {
     MONTHS,
     DATE_WORDS,
     REGEX_PATTERNS,
+    HR_DOCUMENT_KEYWORDS,
+    LEGAL_DOCUMENT_KEYWORDS,
+    DURATION_TERMS,
+    BENEFIT_TERMS,
 } from '../lib/data/nlp-training-data.js';
 
 // Re-export EntityType for external use
@@ -70,14 +74,6 @@ export class NlpService {
         return this.manager;
     }
 
-    /**
-     * Train the NLP model with comprehensive data from training-data file
-     * 
-     * See ../data/nlp-training-data.ts for detailed documentation on:
-     * - How the training process works
-     * - What each entity type represents
-     * - How to add new training data
-     */
     private static async trainModel(): Promise<void> {
         if (!this.manager) return;
 
@@ -249,6 +245,9 @@ export class NlpService {
             'IDENTIFIER': EntityType.IDENTIFIER,
             'EMAIL': EntityType.EMAIL,
             'PHONE': EntityType.PHONE,
+            'DURATION': EntityType.DURATION,
+            'BENEFIT': EntityType.BENEFIT,
+            'LEGAL_TERM': EntityType.LEGAL_TERM,
         };
         return mapping[nlpEntity] || null;
     }
@@ -398,6 +397,140 @@ export class NlpService {
 
         // Extract identifiers
         this.extractIdentifiers(text, entities);
+        
+        // Extract HR/Legal document specific patterns
+        this.extractDurations(text, entities);
+        this.extractBenefits(text, entities);
+        this.extractSalaryCompensation(text, entities);
+        this.extractLegalTerms(text, entities);
+    }
+
+    /**
+     * Extract duration/period patterns (for employment terms)
+     */
+    private static extractDurations(text: string, entities: ExtractedEntity[]): void {
+        const durationPatterns = [
+            // Numeric durations: "3 months", "90 days", "2 years"
+            /\b(\d+)\s*(day|days|week|weeks|month|months|year|years)\b/gi,
+            // Written durations: "three months", "ninety days"
+            /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirty|sixty|ninety)\s*(day|days|week|weeks|month|months|year|years)\b/gi,
+            // Probation/notice periods
+            /\b(probation(?:ary)?\s+period|notice\s+period)\s+(?:of\s+)?(\d+\s*(?:day|days|week|weeks|month|months|year|years)|[a-z]+\s+(?:day|days|week|weeks|month|months|year|years))\b/gi,
+        ];
+
+        for (const pattern of durationPatterns) {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                entities.push({
+                    type: EntityType.DURATION,
+                    text: match[0],
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    confidence: 0.9,
+                });
+            }
+        }
+    }
+
+    /**
+     * Extract benefits and compensation terms
+     */
+    private static extractBenefits(text: string, entities: ExtractedEntity[]): void {
+        const benefitPatterns = [
+            // Health benefits
+            /\b(health|medical|dental|vision)\s+(insurance|coverage|plan|benefits?)\b/gi,
+            // Life/disability insurance
+            /\b(life|disability|accident)\s+insurance\b/gi,
+            // Retirement benefits
+            /\b(401\s*\(?k\)?|retirement|pension)\s*(plan|benefits?|match(?:ing)?)?\b/gi,
+            // Stock/equity
+            /\b(stock\s+options?|RSU|restricted\s+stock|ESOP|equity\s+grant)\b/gi,
+            // Leave benefits
+            /\b(paid\s+time\s+off|PTO|vacation\s+days?|sick\s+(?:leave|days?)|personal\s+(?:leave|days?))\b/gi,
+            /\b(maternity|paternity|parental|family)\s+leave\b/gi,
+            // Bonuses
+            /\b(signing|joining|performance|annual|quarterly)\s+bonus\b/gi,
+            // Allowances
+            /\b(travel|transport|housing|meal|phone|internet)\s+allowance\b/gi,
+            // Work arrangements
+            /\b(remote\s+work|work\s+from\s+home|WFH|hybrid\s+work|flexible\s+hours?)\b/gi,
+        ];
+
+        for (const pattern of benefitPatterns) {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                entities.push({
+                    type: EntityType.BENEFIT,
+                    text: match[0],
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    confidence: 0.9,
+                });
+            }
+        }
+    }
+
+    /**
+     * Extract salary and compensation amounts with context
+     */
+    private static extractSalaryCompensation(text: string, entities: ExtractedEntity[]): void {
+        const salaryPatterns = [
+            // Salary with currency and period
+            /\b(annual|yearly|monthly|base)\s+salary\s+(?:of\s+)?(\$|₹|€|£|USD|INR|EUR|GBP)?\s?[\d,]+(?:\.\d{2})?\b/gi,
+            // Per annum/month patterns
+            /\b(\$|₹|€|£|USD|INR|EUR|GBP)\s?[\d,]+(?:\.\d{2})?\s*(per\s+(?:annum|month|year)|p\.?a\.?|p\.?m\.?)\b/gi,
+            // CTC (Cost to Company - common in India)
+            /\b(CTC|cost\s+to\s+company)\s+(?:of\s+)?(\$|₹|€|£|USD|INR|EUR|GBP)?\s?[\d,]+(?:\.\d{2})?\s*(LPA|lakh|lakhs?)?\b/gi,
+            // Indian salary formats (lakhs, LPA)
+            /\b(\$|₹|INR)?\s?[\d.]+\s*(lakh|lakhs?|LPA|lac)\s*(per\s+annum)?\b/gi,
+        ];
+
+        for (const pattern of salaryPatterns) {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                entities.push({
+                    type: EntityType.MONEY,
+                    text: match[0],
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    confidence: 0.95,
+                });
+            }
+        }
+    }
+
+    /**
+     * Extract legal terms and clauses
+     */
+    private static extractLegalTerms(text: string, entities: ExtractedEntity[]): void {
+        const legalPatterns = [
+            // Agreement types
+            /\b(non-disclosure\s+agreement|NDA|confidentiality\s+agreement)\b/gi,
+            /\b(employment\s+agreement|employment\s+contract|offer\s+letter)\b/gi,
+            /\b(service\s+agreement|consulting\s+agreement|contractor\s+agreement)\b/gi,
+            /\b(non-compete\s+(?:agreement|clause)|non-solicitation)\b/gi,
+            // Legal clauses
+            /\b(intellectual\s+property|IP\s+rights?|confidential\s+information)\b/gi,
+            /\b(termination\s+clause|indemnification|limitation\s+of\s+liability)\b/gi,
+            /\b(governing\s+law|jurisdiction|arbitration|dispute\s+resolution)\b/gi,
+            // Parties
+            /\b(disclosing\s+party|receiving\s+party|first\s+party|second\s+party)\b/gi,
+            // At-will employment
+            /\b(at-will\s+employment|employment\s+at\s+will)\b/gi,
+        ];
+
+        for (const pattern of legalPatterns) {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                entities.push({
+                    type: EntityType.LEGAL_TERM,
+                    text: match[0],
+                    start: match.index,
+                    end: match.index + match[0].length,
+                    confidence: 0.9,
+                });
+            }
+        }
     }
 
     /**
