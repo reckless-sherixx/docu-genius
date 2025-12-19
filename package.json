@@ -18,5 +18,18 @@
   "packageManager": "pnpm@10.4.1",
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "@prisma/engines",
+      "@tailwindcss/oxide",
+      "bcrypt",
+      "canvas",
+      "core-js-pure",
+      "msgpackr-extract",
+      "prisma",
+      "sharp",
+      "tesseract.js"
+    ]
   }
 }

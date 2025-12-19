@@ -22,7 +22,7 @@ export class OrganizationService {
                 }
             });
 
-            return memberships.map(membership => ({
+            return memberships.map((membership) => ({
                 ...membership.organization,
                 role: membership.role,
                 joined_at: membership.joined_at,

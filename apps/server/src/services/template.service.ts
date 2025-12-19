@@ -82,7 +82,7 @@ export class TemplateService {
                 },
             });
 
-            return templates.map(template => ({
+            return templates.map((template) => ({
                 id: template.id,
                 name: template.template_name,
                 description: template.template_description,
