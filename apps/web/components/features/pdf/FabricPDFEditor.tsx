@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import * as fabric from 'fabric';
+import SignatureCanvas from 'react-signature-canvas';
 import {
     Type,
     Save,
@@ -41,7 +42,8 @@ import {
     ChevronRight,
     Clock,
     Gift,
-    FileText
+    FileText,
+    Pen
 } from 'lucide-react';
 
 // Dynamically import pdfjs
@@ -170,6 +172,10 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
     const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
     const [showColorPicker, setShowColorPicker] = useState(false);
+
+    // Signature modal state
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
+    const signatureCanvasRef = useRef<SignatureCanvas>(null);
 
     // History
     const [history, setHistory] = useState<any[]>([]);
@@ -459,7 +465,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const extractTextFromPDF = async (pdf: any): Promise<TextElement[]> => {
-        console.log('🔍 Extracting text with Sejda-style grouping algorithm...');
         const allTextElements: TextElement[] = [];
 
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -467,7 +472,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const textContent = await page.getTextContent();
             const viewport = page.getViewport({ scale: 2 });
 
-            // Group text items into logical text blocks (like Sejda does)
             const textBlocks = groupTextItems(textContent.items, viewport);
 
             textBlocks.forEach((block, index) => {
@@ -490,12 +494,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 });
             });
         }
-
-        console.log(`✅ Extracted ${allTextElements.length} text blocks with Sejda-style grouping`);
         return allTextElements;
     };
 
-    // Sejda-style text grouping: Merge nearby text items into coherent blocks
     const groupTextItems = (items: any[], viewport: any) => {
         const textBlocks: any[] = [];
         let currentBlock: any = null;
@@ -524,11 +525,11 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             // Check if this item should be merged with current block
             // More strict conditions to preserve layout
             if (currentBlock &&
-                Math.abs(currentBlock.y - posY) < scaledFontSize * 0.15 && // STRICTER: Same line (within 15% of font size)
-                posX >= (currentBlock.x + currentBlock.width - 5) && // Text comes after previous
-                posX <= (currentBlock.x + currentBlock.width + scaledFontSize * 0.8) && // STRICTER: Not too far horizontally
+                Math.abs(currentBlock.y - posY) < scaledFontSize * 0.15 && 
+                posX >= (currentBlock.x + currentBlock.width - 5) && 
+                posX <= (currentBlock.x + currentBlock.width + scaledFontSize * 0.8) && 
                 currentBlock.fontFamily === fontFamily &&
-                Math.abs(currentBlock.fontSize - scaledFontSize) < 2 && // Similar font size
+                Math.abs(currentBlock.fontSize - scaledFontSize) < 2 && 
                 currentBlock.isBold === isBold &&
                 currentBlock.isItalic === isItalic) {
 
@@ -857,14 +858,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         saveCurrentState();
     };
 
-    const saveCurrentState = () => {
-        const allTextElements = extractAllTextFromCanvases();
-        const newHistory = history.slice(0, historyIndex + 1);
-        newHistory.push(allTextElements);
-        setHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
-    };
-
     const extractAllTextFromCanvases = (): TextElement[] => {
         const elements: TextElement[] = [];
 
@@ -895,28 +888,36 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         return elements;
     };
 
+    const saveCurrentState = () => {
+        const allTextElements = extractAllTextFromCanvases();
+        const newHistory = history.slice(0, historyIndex + 1);
+        newHistory.push(allTextElements);
+        setHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        setTextElements(allTextElements);
+    };
+
     const undo = () => {
         if (historyIndex > 0) {
-            setHistoryIndex(historyIndex - 1);
-            restoreState(history[historyIndex - 1]);
+            const newIndex = historyIndex - 1;
+            setHistoryIndex(newIndex);
+            restoreState(history[newIndex]);
         }
     };
 
     const redo = () => {
         if (historyIndex < history.length - 1) {
-            setHistoryIndex(historyIndex + 1);
-            restoreState(history[historyIndex + 1]);
+            const newIndex = historyIndex + 1;
+            setHistoryIndex(newIndex);
+            restoreState(history[newIndex]);
         }
     };
 
     const restoreState = (elements: TextElement[]) => {
-        // Clear all canvases
+        // Clear all textboxes from all canvases
         Object.values(fabricCanvases.current).forEach(canvas => {
-            canvas.getObjects().forEach((obj: any) => {
-                if (obj.type === 'textbox') {
-                    canvas.remove(obj);
-                }
-            });
+            const objectsToRemove = canvas.getObjects().filter((obj: any) => obj.type === 'textbox');
+            objectsToRemove.forEach((obj: any) => canvas.remove(obj));
         });
 
         // Re-add elements
@@ -924,9 +925,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const canvas = fabricCanvases.current[el.page];
             if (canvas) {
                 addTextToCanvas(canvas, el);
-                canvas.renderAll();
             }
         });
+
+        // Render all canvases
+        Object.values(fabricCanvases.current).forEach(canvas => canvas.renderAll());
+        
+        setTextElements(elements);
     };
 
     // Handle entity click - find and highlight only the specific entity text in the canvas
@@ -1007,49 +1012,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         }
     };
 
-    const savePDF = async () => {
-        setSaving(true);
-        setError(null);
-
-        try {
-            console.log('💾 Saving PDF edits (temporary)...');
-
-            const allTextElements = extractAllTextFromCanvases();
-
-            // Save edits - keeps as temporary
-            const response = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session?.user?.token}`,
-                },
-                body: JSON.stringify({
-                    templateId,
-                    textElements: allTextElements,
-                    deletedElements: [],
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to save PDF');
-            }
-
-            const result = await response.json();
-
-            if (result.success) {
-                // Update current templateId if a new one was created
-                if (result.data?.templateId && result.data.templateId !== templateId) {
-                    setTemplateId(result.data.templateId);
-                }
-                alert('✅ Changes saved! Click "Save as Template" to save permanently.');
-            }
-        } catch (err) {
-            console.error('❌ Error saving PDF:', err);
-            setError(err instanceof Error ? err.message : 'Failed to save PDF');
-        } finally {
-            setSaving(false);
-        }
-    };
 
     const saveAsPermanentTemplate = async () => {
         setSaving(true);
@@ -1158,7 +1120,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 const canvas = fabricCanvases.current[selectedPage];
                 if (!canvas) return;
 
-                fabric.Image.fromURL(imgUrl, {}).then((img: fabric.Image) => {
+                fabric.FabricImage.fromURL(imgUrl, {}).then((img: fabric.Image) => {
                     img.scale(0.5);
                     img.set({
                         left: 100,
@@ -1326,86 +1288,98 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     return (
         <div className="flex flex-col h-screen bg-gray-50">
             {/* Top Toolbar */}
-            <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="flex items-center justify-between px-4 py-2">
-                    <div className="flex items-center gap-1">
+            <div className="bg-gradient-to-r from-gray-50 to-white border-b-2 border-gray-200 shadow-md">
+                <div className="flex items-center justify-between px-6 py-3">
+                    <div className="flex items-center gap-2">
                         {/* Add Elements */}
-                        <div className="flex gap-1 border-r border-gray-200 pr-2 mr-2">
+                        <div className="flex gap-1.5 border-r-2 border-gray-300 pr-3 mr-3">
                             <button
                                 onClick={addImage}
                                 disabled={!selectedPage}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50 text-sm"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 text-sm font-medium shadow-sm"
                                 title="Add Image"
                             >
-                                <ImageIcon className="h-4 w-4" />
-                                <span>Image</span>
+                                <ImageIcon className="h-4 w-4 text-gray-700" />
+                                <span className="text-gray-700">Image</span>
                             </button>
                             <button
                                 onClick={addBulletList}
                                 disabled={!selectedPage}
-                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                className="p-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 shadow-sm"
                                 title="Add Bullet List"
                             >
-                                <List className="h-4 w-4" />
+                                <List className="h-4 w-4 text-gray-700" />
                             </button>
                             <button
                                 onClick={addNumberedList}
                                 disabled={!selectedPage}
-                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                className="p-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 shadow-sm"
                                 title="Add Numbered List"
                             >
-                                <ListOrdered className="h-4 w-4" />
+                                <ListOrdered className="h-4 w-4 text-gray-700" />
                             </button>
                             <button
                                 onClick={addHorizontalLine}
                                 disabled={!selectedPage}
-                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                className="p-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 shadow-sm"
                                 title="Add Horizontal Line"
                             >
-                                <Minus className="h-4 w-4" />
+                                <Minus className="h-4 w-4 text-gray-700" />
                             </button>
                             <button
                                 onClick={() => addShape('rectangle')}
                                 disabled={!selectedPage}
-                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                className="p-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 shadow-sm"
                                 title="Add Rectangle"
                             >
-                                <Square className="h-4 w-4" />
+                                <Square className="h-4 w-4 text-gray-700" />
                             </button>
                             <button
                                 onClick={() => addShape('circle')}
                                 disabled={!selectedPage}
-                                className="p-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition disabled:opacity-50"
+                                className="p-2 bg-white hover:bg-blue-50 hover:border-blue-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 shadow-sm"
                                 title="Add Circle"
                             >
-                                <Circle className="h-4 w-4" />
+                                <Circle className="h-4 w-4 text-gray-700" />
+                            </button>
+                            <button
+                                onClick={() => setShowSignatureModal(true)}
+                                disabled={!selectedPage}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-purple-50 hover:border-purple-400 rounded-lg border border-gray-300 transition-all disabled:opacity-50 text-sm font-medium shadow-sm"
+                                title="Add Signature"
+                            >
+                                <Pen className="h-4 w-4 text-purple-600" />
+                                <span className="text-gray-700">Sign</span>
                             </button>
                         </div>
 
                         {/* Undo/Redo */}
-                        <button
-                            onClick={undo}
-                            disabled={historyIndex <= 0}
-                            className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 transition"
-                            title="Undo"
-                        >
-                            <Undo className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={redo}
-                            disabled={historyIndex >= history.length - 1}
-                            className="p-2 hover:bg-gray-100 rounded disabled:opacity-30 transition"
-                            title="Redo"
-                        >
-                            <Redo className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-300 shadow-sm">
+                            <button
+                                onClick={undo}
+                                disabled={historyIndex <= 0}
+                                className="p-2 hover:bg-blue-50 rounded-l-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                title="Undo (Ctrl+Z)"
+                            >
+                                <Undo className="h-4 w-4 text-gray-700" />
+                            </button>
+                            <div className="w-px h-5 bg-gray-300" />
+                            <button
+                                onClick={redo}
+                                disabled={historyIndex >= history.length - 1}
+                                className="p-2 hover:bg-blue-50 rounded-r-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                title="Redo (Ctrl+Y)"
+                            >
+                                <Redo className="h-4 w-4 text-gray-700" />
+                            </button>
+                        </div>
 
                         {/* Delete */}
                         {selectedObject && (
                             <button
                                 onClick={deleteSelected}
-                                className="p-2 hover:bg-red-100 text-red-600 rounded transition"
-                                title="Delete Selected"
+                                className="p-2 bg-white hover:bg-red-50 text-red-600 rounded-lg border border-red-300 shadow-sm transition-all"
+                                title="Delete Selected (Delete)"
                             >
                                 <Trash2 className="h-4 w-4" />
                             </button>
@@ -1415,8 +1389,14 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                         {/* Zoom */}
                         <button
-                            onClick={() => setScale(Math.max(0.5, scale - 0.1))}
+                            onClick={() => {
+                                const newScale = Math.max(0.5, scale - 0.1);
+                                setScale(newScale);
+                                const currentElements = extractAllTextFromCanvases();
+                                setTimeout(() => initializeFabricCanvases(pageCanvases, currentElements), 100);
+                            }}
                             className="p-2 hover:bg-gray-100 rounded transition"
+                            title="Zoom Out"
                         >
                             <ZoomOut className="h-4 w-4" />
                         </button>
@@ -1424,13 +1404,19 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                             {Math.round(scale * 100)}%
                         </span>
                         <button
-                            onClick={() => setScale(Math.min(2, scale + 0.1))}
+                            onClick={() => {
+                                const newScale = Math.min(2, scale + 0.1);
+                                setScale(newScale);
+                                const currentElements = extractAllTextFromCanvases();
+                                setTimeout(() => initializeFabricCanvases(pageCanvases, currentElements), 100);
+                            }}
                             className="p-2 hover:bg-gray-100 rounded transition"
+                            title="Zoom In"
                         >
                             <ZoomIn className="h-4 w-4" />
                         </button>
 
-                        <div className="w-px h-6 bg-gray-300 mx-1" />
+                        <div className="w-px h-8 bg-gray-300 mx-2" />
 
                         {/* Toggle Text Layer */}
                         <button
@@ -1446,7 +1432,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                     canvas.renderAll();
                                 });
                             }}
-                            className={`px-3 py-2 text-sm rounded transition flex items-center gap-2 ${showTextLayer ? 'bg-[rgb(132,42,59)] text-white' : 'bg-gray-200 hover:bg-gray-300'
+                            className={`px-4 py-2 text-sm rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${showTextLayer ? 'bg-[rgb(132,42,59)] text-white hover:bg-[rgb(112,32,49)]' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
                                 }`}
                             title={showTextLayer ? 'Hide Text Layer' : 'Show Text Layer'}
                         >
@@ -1457,7 +1443,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         {/* Toggle NLP Entities Sidebar */}
                         <button
                             onClick={() => setShowNlpSidebar(!showNlpSidebar)}
-                            className={`px-3 py-2 text-sm rounded transition flex items-center gap-2 ${showNlpSidebar ? 'bg-[rgb(132,42,59)] text-white' : 'bg-gray-200 hover:bg-gray-300'
+                            className={`px-4 py-2 text-sm rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${showNlpSidebar ? 'bg-[rgb(132,42,59)] text-white hover:bg-[rgb(112,32,49)]' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
                                 }`}
                             title={showNlpSidebar ? 'Hide NLP Entities' : 'Show NLP Entities'}
                         >
@@ -1465,32 +1451,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                             Entities {nlpEntities.length > 0 && `(${nlpEntities.length})`}
                         </button>
 
-                        <div className="w-px h-6 bg-gray-300 mx-1" />
-
-                        {/* Save Draft */}
-                        <button
-                            onClick={savePDF}
-                            disabled={saving}
-                            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded shadow-sm transition disabled:opacity-50 flex items-center gap-2"
-                        >
-                            {saving ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="h-4 w-4" />
-                                    Save Draft
-                                </>
-                            )}
-                        </button>
+                        <div className="w-px h-8 bg-gray-300 mx-2" />
 
                         {/* Save as Template (Permanent) */}
                         <button
                             onClick={saveAsPermanentTemplate}
                             disabled={saving}
-                            className="px-4 py-2 bg-[rgb(132,42,59)] hover:bg-[rgb(112,32,49)] text-white text-sm rounded shadow-sm transition disabled:opacity-50 flex items-center gap-2"
+                            className="px-5 py-2.5 bg-gradient-to-r from-[rgb(132,42,59)] to-[rgb(112,32,49)] hover:from-[rgb(112,32,49)] hover:to-[rgb(92,22,39)] text-white text-sm rounded-lg shadow-md transition-all disabled:opacity-50 flex items-center gap-2 font-medium"
                         >
                             {saving ? (
                                 <>
@@ -1507,7 +1474,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                         <button
                             onClick={() => router.push('/dashboard/templates')}
-                            className="px-4 py-2 text-sm hover:bg-gray-100 rounded transition"
+                            className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-300 transition-all font-medium shadow-sm"
                         >
                             Cancel
                         </button>
@@ -1516,12 +1483,15 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                 {/* Formatting Toolbar (shows when text selected) */}
                 {selectedTextbox && (
-                    <div className="flex items-center gap-1 px-4 py-2 border-t border-gray-200 bg-rose-50">
+                    <div className="flex items-center gap-2 px-6 py-3 border-t-2 border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                        <div className="text-xs font-semibold text-gray-600 mr-2">TEXT FORMATTING</div>
+                        
                         {/* Bold */}
                         <button
                             onClick={() => updateSelectedObjectProperty('fontWeight', selectedTextbox.fontWeight === 'bold' ? 'normal' : 'bold')}
-                            className={`p-2 rounded transition ${selectedTextbox.fontWeight === 'bold' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                            className={`p-2 rounded-lg transition-all shadow-sm ${selectedTextbox.fontWeight === 'bold' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-blue-100 border border-gray-300'
                                 }`}
+                            title="Bold"
                         >
                             <Bold className="h-4 w-4" />
                         </button>
@@ -1529,8 +1499,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         {/* Italic */}
                         <button
                             onClick={() => updateSelectedObjectProperty('fontStyle', selectedTextbox.fontStyle === 'italic' ? 'normal' : 'italic')}
-                            className={`p-2 rounded transition ${selectedTextbox.fontStyle === 'italic' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                            className={`p-2 rounded-lg transition-all shadow-sm ${selectedTextbox.fontStyle === 'italic' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-blue-100 border border-gray-300'
                                 }`}
+                            title="Italic"
                         >
                             <Italic className="h-4 w-4" />
                         </button>
@@ -1538,8 +1509,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         {/* Underline */}
                         <button
                             onClick={() => updateSelectedObjectProperty('underline', !selectedTextbox.underline)}
-                            className={`p-2 rounded transition ${selectedTextbox.underline ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
+                            className={`p-2 rounded-lg transition-all shadow-sm ${selectedTextbox.underline ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-blue-100 border border-gray-300'
                                 }`}
+                            title="Underline"
                         >
                             <Underline className="h-4 w-4" />
                         </button>
@@ -1554,13 +1526,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                     setShowFontFamilyMenu(false);
                                     setShowColorPicker(false);
                                 }}
-                                className="px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition flex items-center gap-2 text-sm"
+                                className="px-4 py-2 bg-white hover:bg-blue-100 rounded-lg border border-gray-300 transition-all flex items-center gap-2 text-sm font-medium shadow-sm min-w-[70px]"
                             >
-                                {Math.round((selectedTextbox.fontSize || 16) / scale)}
+                                {Math.round((selectedTextbox.fontSize || 16) / scale)}px
                                 <ChevronDown className="h-3 w-3" />
                             </button>
                             {showFontSizeMenu && (
-                                <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-64 overflow-y-auto">
+                                <div className="absolute top-full mt-2 bg-white border border-gray-300 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
                                     {FONT_SIZES.map(size => (
                                         <button
                                             key={size}
@@ -1568,9 +1540,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                                 updateSelectedObjectProperty('fontSize', size * scale);
                                                 setShowFontSizeMenu(false);
                                             }}
-                                            className="block w-full px-4 py-2 text-left hover:bg-blue-50 text-sm"
+                                            className="block w-full px-5 py-2.5 text-left hover:bg-blue-50 text-sm transition-colors"
                                         >
-                                            {size}
+                                            {size}px
                                         </button>
                                     ))}
                                 </div>
@@ -1585,13 +1557,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                     setShowFontSizeMenu(false);
                                     setShowColorPicker(false);
                                 }}
-                                className="px-3 py-1.5 bg-white hover:bg-gray-100 rounded border border-gray-300 transition flex items-center gap-2 text-sm min-w-[140px]"
+                                className="px-4 py-2 bg-white hover:bg-blue-100 rounded-lg border border-gray-300 transition-all flex items-center gap-2 text-sm font-medium shadow-sm min-w-[160px]"
                             >
                                 <span className="truncate">{selectedTextbox.fontFamily}</span>
                                 <ChevronDown className="h-3 w-3" />
                             </button>
                             {showFontFamilyMenu && (
-                                <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50">
+                                <div className="absolute top-full mt-2 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
                                     {FONT_FAMILIES.map(font => (
                                         <button
                                             key={font}
@@ -1652,34 +1624,40 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         <div className="w-px h-6 bg-gray-300 mx-1" />
 
                         {/* Text Align */}
-                        <button
-                            onClick={() => updateSelectedObjectProperty('textAlign', 'left')}
-                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'left' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
-                                }`}
-                        >
-                            <AlignLeft className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={() => updateSelectedObjectProperty('textAlign', 'center')}
-                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'center' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
-                                }`}
-                        >
-                            <AlignCenter className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={() => updateSelectedObjectProperty('textAlign', 'right')}
-                            className={`p-2 rounded transition ${selectedTextbox.textAlign === 'right' ? 'bg-[rgb(132,42,59)] text-white' : 'bg-white hover:bg-gray-100'
-                                }`}
-                        >
-                            <AlignRight className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-300 shadow-sm p-0.5">
+                            <button
+                                onClick={() => updateSelectedObjectProperty('textAlign', 'left')}
+                                className={`p-2 rounded-lg transition-all ${selectedTextbox.textAlign === 'left' ? 'bg-[rgb(132,42,59)] text-white' : 'hover:bg-blue-50'
+                                    }`}
+                                title="Align Left"
+                            >
+                                <AlignLeft className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => updateSelectedObjectProperty('textAlign', 'center')}
+                                className={`p-2 rounded-lg transition-all ${selectedTextbox.textAlign === 'center' ? 'bg-[rgb(132,42,59)] text-white' : 'hover:bg-blue-50'
+                                    }`}
+                                title="Align Center"
+                            >
+                                <AlignCenter className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => updateSelectedObjectProperty('textAlign', 'right')}
+                                className={`p-2 rounded-lg transition-all ${selectedTextbox.textAlign === 'right' ? 'bg-[rgb(132,42,59)] text-white' : 'hover:bg-blue-50'
+                                    }`}
+                                title="Align Right"
+                            >
+                                <AlignRight className="h-4 w-4" />
+                            </button>
+                        </div>
 
                         <div className="w-px h-6 bg-gray-300 mx-1" />
 
                         {/* Delete */}
                         <button
                             onClick={deleteSelectedObject}
-                            className="p-2 bg-white hover:bg-red-50 text-red-600 rounded border border-gray-300 transition"
+                            className="p-2 bg-white hover:bg-red-50 text-red-600 rounded-lg border-2 border-red-300 transition-all shadow-sm"
+                            title="Delete (Del)"
                         >
                             <Trash2 className="h-4 w-4" />
                         </button>
@@ -1687,10 +1665,11 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 )}
 
                 {/* Tools Bar */}
-                <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center gap-3 px-6 py-3 border-t-2 border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+                    <div className="text-xs font-semibold text-gray-600 mr-1">TOOLS:</div>
                     <button
                         onClick={() => setCurrentTool('select')}
-                        className={`px-3 py-1.5 rounded transition text-sm flex items-center gap-2 ${currentTool === 'select' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-100 border border-gray-300'
+                        className={`px-4 py-2 rounded-lg transition-all text-sm font-medium flex items-center gap-2 shadow-sm ${currentTool === 'select' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'bg-white hover:bg-blue-50 border border-gray-300 text-gray-700'
                             }`}
                     >
                         <Type className="h-4 w-4" />
@@ -1699,15 +1678,15 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                     <button
                         onClick={() => setCurrentTool('text')}
-                        className={`px-3 py-1.5 rounded transition text-sm flex items-center gap-2 ${currentTool === 'text' ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-100 border border-gray-300'
+                        className={`px-4 py-2 rounded-lg transition-all text-sm font-medium flex items-center gap-2 shadow-sm ${currentTool === 'text' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md' : 'bg-white hover:bg-blue-50 border border-gray-300 text-gray-700'
                             }`}
                     >
                         <Type className="h-4 w-4" />
                         Add Text
                     </button>
 
-                    <span className="text-xs text-gray-500 ml-2">
-                        {currentTool === 'text' ? 'Click "Add Text" on any page' : 'Double-click text to edit, drag to move'}
+                    <span className="text-xs text-gray-600 ml-3 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                        {currentTool === 'text' ? '💡 Click "Add Text" on any page to insert text' : '💡 Double-click text to edit, drag to move'}
                     </span>
                 </div>
             </div>
@@ -1859,6 +1838,95 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 )}
 
             </div>
+
+            {/* Signature Modal */}
+            {showSignatureModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-[600px] max-w-[90vw]">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <Pen className="h-5 w-5 text-[rgb(132,42,59)]" />
+                                Add Your Signature
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    setShowSignatureModal(false);
+                                    signatureCanvasRef.current?.clear();
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <p className="text-sm text-gray-600 mb-3">Draw your signature below using your mouse or touchscreen</p>
+                            <div className="border-2 border-gray-300 rounded-lg bg-gray-50">
+                                <SignatureCanvas
+                                    ref={signatureCanvasRef}
+                                    canvasProps={{
+                                        width: 552,
+                                        height: 200,
+                                        className: 'signature-canvas rounded-lg cursor-crosshair',
+                                    }}
+                                    backgroundColor="white"
+                                    penColor="black"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                            <button
+                                onClick={() => signatureCanvasRef.current?.clear()}
+                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition font-medium"
+                            >
+                                Clear
+                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        setShowSignatureModal(false);
+                                        signatureCanvasRef.current?.clear();
+                                    }}
+                                    className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-300 transition font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (signatureCanvasRef.current && !signatureCanvasRef.current.isEmpty()) {
+                                            const signatureDataUrl = signatureCanvasRef.current.toDataURL('image/png');
+                                            if (selectedPage) {
+                                                const canvas = fabricCanvases.current[selectedPage];
+                                                if (canvas) {
+                                                    fabric.FabricImage.fromURL(signatureDataUrl).then((img: any) => {
+                                                        img.set({
+                                                            left: 100 * scale,
+                                                            top: 100 * scale,
+                                                            scaleX: 0.3 * scale,
+                                                            scaleY: 0.3 * scale,
+                                                            selectable: true,
+                                                        });
+                                                        canvas.add(img);
+                                                        canvas.setActiveObject(img);
+                                                        canvas.renderAll();
+                                                        saveCurrentState();
+                                                    });
+                                                }
+                                            }
+                                            setShowSignatureModal(false);
+                                            signatureCanvasRef.current.clear();
+                                        }
+                                    }}
+                                    className="px-6 py-2 bg-[rgb(132,42,59)] hover:bg-[rgb(112,32,49)] text-white rounded-lg transition font-medium shadow-lg"
+                                >
+                                    Add Signature
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

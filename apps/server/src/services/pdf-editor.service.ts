@@ -13,24 +13,22 @@ const require = createRequire(import.meta.url);
 export class PDFEditorService {
 
     /**
-     * Post-process OCR text to fix common recognition errors
+     * Post-process OCR text 
      */
     private cleanOCRText(text: string): string {
         return text
-            // Fix common number/symbol substitutions
-            .replace(/^4,\s/gm, '4. ')      // 4, -> 4.
-            .replace(/^&\.\s/gm, '5. ')     // &. -> 5.
-            .replace(/^\*\s/gm, '• ')       // * at line start -> bullet
-            .replace(/^»\s/gm, '• ')        // » -> bullet
-            .replace(/^\+\s/gm, '• ')       // + at line start -> bullet
-            .replace(/\|(?=[A-Za-z])/g, 'I') // |mproved -> Improved (| before letter = I)
-            .replace(/l(?=[A-Z])/g, 'I')    // lmproved -> Improved (lowercase L before uppercase)
-            .replace(/0(?=[a-zA-Z]{2})/g, 'O') // 0rder -> Order
-            .replace(/1(?=[a-z]{2})/g, 'l') // 1imited -> limited
-            .replace(/5(?=\.\s[A-Z])/g, 'S') // 5. Something -> S. (less common)
-            // Fix spacing issues
-            .replace(/\s{2,}/g, ' ')        // Multiple spaces -> single space
-            .replace(/\n{3,}/g, '\n\n')     // Multiple newlines -> double newline
+            .replace(/^4,\s/gm, '4. ')     
+            .replace(/^&\.\s/gm, '5. ')    
+            .replace(/^\*\s/gm, '• ')       
+            .replace(/^»\s/gm, '• ')        
+            .replace(/^\+\s/gm, '• ')       
+            .replace(/\|(?=[A-Za-z])/g, 'I') 
+            .replace(/l(?=[A-Z])/g, 'I')   
+            .replace(/0(?=[a-zA-Z]{2})/g, 'O')
+            .replace(/1(?=[a-z]{2})/g, 'l') 
+            .replace(/5(?=\.\s[A-Z])/g, 'S') 
+            .replace(/\s{2,}/g, ' ')       
+            .replace(/\n{3,}/g, '\n\n')     
             .trim();
     }
 
@@ -70,7 +68,7 @@ export class PDFEditorService {
             const isScannedPDF = template.template_type === 'SCANNED_PDF';
             console.log(`📋 Template type: ${template.template_type}, isScannedPDF: ${isScannedPDF}`);
             
-            // Extract text from original PDF first using pdf-parse (fast, for non-scanned PDFs)
+            // Extract text from original PDF first using pdf-parse 
             let extractedText = '';
             let ocrTextLines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}> = [];
             let imageScales: Array<{width: number, height: number}> = [];
@@ -340,7 +338,6 @@ export class PDFEditorService {
 
     /**
      * Perform OCR on a PDF by converting pages to images first
-     * Uses pdf-to-img (pure JS, works in any environment - no native binaries)
      */
     private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
         console.log(`🔤 Running OCR on PDF pages...`);
@@ -353,14 +350,11 @@ export class PDFEditorService {
             
             console.log(`✅ Converted ${numPages} pages to images`);
             
-            // Run OCR on each page using tessdata_best for higher accuracy
             const worker = await createWorker('eng', 1, {
                 langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
                 gzip: false,
             });
             let fullText = '';
-            
-            // Set Tesseract parameters for better accuracy
             await worker.setParameters({
                 preserve_interword_spaces: '1',
             });
@@ -738,7 +732,7 @@ export class PDFEditorService {
                     });
                 }
 
-                // Also cover deleted elements (they shouldn't show original text)
+                // Also cover deleted elements 
                 const deletedOnPage = deletedElements.filter(del => del.page === pageNum);
                 for (const element of deletedOnPage) {
                     const originalElement = textElements.find(

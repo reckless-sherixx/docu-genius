@@ -10,12 +10,10 @@ import {
     Edit3,
     Trash2,
     Download,
-    Calendar,
     Loader2,
     FolderOpen,
     Search,
     X,
-    ChevronDown
 } from "lucide-react";
 
 interface Template {

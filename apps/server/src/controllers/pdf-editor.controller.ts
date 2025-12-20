@@ -174,8 +174,7 @@ export class PDFEditorController {
   }
 
   /**
-   * Save editable PDF (Sejda-style with text manipulation)
-   * Rebuilds entire PDF with modified text elements
+   * Save editable PDF 
    */
   async saveEditablePDF(req: Request, res: Response): Promise<any> {
     try {

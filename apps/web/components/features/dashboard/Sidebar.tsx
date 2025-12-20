@@ -223,7 +223,7 @@ const SidebarContent = ({
       </div>
 
       {/* Personalise Section */}
-      <div className="mt-35 px-4 sm:mt-40">
+      <div className="mt-35 px-4 sm:mt-35">
         <motion.p
           animate={{
             display: animate ? (open ? "block" : "none") : "block",
