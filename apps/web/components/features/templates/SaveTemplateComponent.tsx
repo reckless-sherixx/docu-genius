@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useOrganizationId } from "@/hooks/use-organization-id";
 import {
     FileText,
     Edit3,
@@ -30,10 +31,10 @@ interface Template {
 export function SaveTemplateComponent() {
     const { data: session } = useSession();
     const router = useRouter();
+    const organizationId = useOrganizationId();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loadingTemplates, setLoadingTemplates] = useState(false);
     const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
-    const [organizationId, setOrganizationId] = useState<string>('');
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
@@ -123,38 +124,6 @@ export function SaveTemplateComponent() {
             day: 'numeric'
         });
     };
-
-    // Fetch user's organizations on mount
-    useEffect(() => {
-        const fetchOrganizations = async () => {
-            if (!session?.user?.token) return;
-
-            try {
-                const response = await fetch(
-                    `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/v1/organization`,
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${session.user.token}`
-                        },
-                        cache: 'no-store'
-                    }
-                );
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('🏢 Organizations response:', data);
-                    if (data.success && data.data && data.data.length > 0) {
-                        setOrganizationId(data.data[0].id);
-                        console.log('🏢 Selected organization:', data.data[0].name, data.data[0].id);
-                    }
-                }
-            } catch (error) {
-                console.error('❌ Error fetching organizations:', error);
-            }
-        };
-
-        fetchOrganizations();
-    }, [session?.user?.token]);
 
     // Fetch templates when organization changes
     useEffect(() => {
@@ -304,7 +273,7 @@ export function SaveTemplateComponent() {
                                         {/* Hover Overlay with Actions */}
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
                                             <button
-                                                onClick={() => router.push(`/dashboard/pdf-editor/${template.id}`)}
+                                                onClick={() => router.push(`/dashboard/${organizationId}/pdf-editor/${template.id}`)}
                                                 className="px-18 py-1 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white text-sm rounded-lg transition flex items-center gap-2"
                                             >
                                                 <Edit3 className="h-4 w-4" />

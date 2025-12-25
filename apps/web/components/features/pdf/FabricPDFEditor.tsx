@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useOrganizationId } from '@/hooks/use-organization-id';
 import * as fabric from 'fabric';
 import SignatureCanvas from 'react-signature-canvas';
 import {
@@ -145,6 +146,7 @@ const PDF_FONT_MAP: Record<string, string> = {
 export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEditorProps) {
     const { data: session } = useSession();
     const router = useRouter();
+    const organizationId = useOrganizationId();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -1063,7 +1065,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             if (permanentResult.success) {
                 alert('✅ Template saved permanently! It will appear in your templates list.');
-                router.push('/dashboard/templates');
+                router.push(`/dashboard/${organizationId}/templates`);
             }
         } catch (err) {
             console.error('❌ Error saving permanent template:', err);
@@ -1092,7 +1094,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                     <div className="text-red-600 text-xl mb-4">❌ Error</div>
                     <p className="text-gray-700 mb-4">{error}</p>
                     <button
-                        onClick={() => router.push('/dashboard/templates')}
+                        onClick={() => router.push(`/dashboard/${organizationId}/templates`)}
                         className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition"
                     >
                         Back to Templates
@@ -1473,7 +1475,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         </button>
 
                         <button
-                            onClick={() => router.push('/dashboard/templates')}
+                            onClick={() => router.push(`/dashboard/${organizationId}/templates`)}
                             className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-300 transition-all font-medium shadow-sm"
                         >
                             Cancel

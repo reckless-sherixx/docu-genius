@@ -1,6 +1,8 @@
 "use client";
 
 import { useTemplateUpload } from '@/hooks/useTemplateUpload';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useOrganizationId } from '@/hooks/use-organization-id';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -21,11 +23,11 @@ export default function TemplateComponent() {
   const { data: session } = useSession();
   const router = useRouter();
   const { uploadTemplate, isUploading, uploadProgress, error, clearError } = useTemplateUpload();
+  const { organizations } = useOrganization();
+  const organizationId = useOrganizationId();
+  const selectedOrganization = organizations.find(org => org.id === organizationId);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<any>(null);
-  const [organizations, setOrganizations] = useState<any[]>([]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
-  const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -38,12 +40,12 @@ export default function TemplateComponent() {
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
 
   const fetchTemplates = useCallback(async () => {
-    if (!selectedOrgId || !session?.user?.token) return;
+    if (!organizationId || !session?.user?.token) return;
     
     try {
       setLoadingTemplates(true);
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/templates?organizationId=${selectedOrgId}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/templates?organizationId=${organizationId}`,
         {
           headers: {
             'Authorization': `Bearer ${session.user.token}`
@@ -65,52 +67,14 @@ export default function TemplateComponent() {
     } finally {
       setLoadingTemplates(false);
     }
-  }, [selectedOrgId, session?.user?.token]);
-
-  const fetchOrganizations = async () => {
-    try {
-      setLoadingOrgs(true);      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/v1/organization`, {
-        headers: {
-          'Authorization': `Bearer ${session?.user?.token}`
-        },
-        cache: 'no-store'
-      });
-
-      if (response.ok) {
-        const data = await response.json();        
-        if (data.success && data.data) {
-          setOrganizations(data.data);
-          // Auto-select first organization
-          if (data.data.length > 0) {
-            setSelectedOrgId(data.data[0].id);
-            console.log('🏢 Selected organization:', data.data[0].name, data.data[0].id);
-          }
-        }
-      } else {
-        console.error('❌ Failed to fetch organizations:', response.status, response.statusText);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching organizations:', error);
-    } finally {
-      setLoadingOrgs(false);
-    }
-  };
-
-  // Fetch organizations on mount
-  useEffect(() => {
-    if (session?.user?.token) {
-      fetchOrganizations();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.token]);
+  }, [organizationId, session?.user?.token]);
 
   // Fetch templates when organization changes
   useEffect(() => {
-    if (selectedOrgId) {
+    if (organizationId) {
       fetchTemplates();
     }
-  }, [selectedOrgId, fetchTemplates]);
+  }, [organizationId, fetchTemplates]);
 
   const handleDeleteTemplate = async (templateId: string) => {
     if (!confirm('Are you sure you want to delete this template?')) return;
@@ -180,7 +144,7 @@ export default function TemplateComponent() {
       return;
     }
 
-    if (!selectedOrgId) {
+    if (!organizationId) {
       alert('Please select an organization first');
       return;
     }
@@ -195,7 +159,7 @@ export default function TemplateComponent() {
         name: templateName,
         description: templateDescription || 'Template uploaded successfully',
         category: templateCategory,
-        organizationId: selectedOrgId,
+        organizationId: organizationId,
       });
 
       console.log('✅ Upload successful!', result);
@@ -213,9 +177,9 @@ export default function TemplateComponent() {
         '✅ Upload successful!\n\nWould you like to edit this PDF now?'
       );
       
-      if (shouldEdit && result.id) {
-        // Redirect to PDF editor
-        router.push(`/dashboard/pdf-editor/${result.id}`);
+      if (shouldEdit && result.id && organizationId) {
+        // Redirect to PDF editor with organizationId
+        router.push(`/dashboard/${organizationId}/pdf-editor/${result.id}`);
       }
     } catch (err) {
       console.error('❌ Upload failed:', err);
@@ -258,35 +222,12 @@ export default function TemplateComponent() {
               Templates
             </h1>
             <p className="text-gray-500 text-xs">
-              Upload and manage your document templates
+              {selectedOrganization ? (
+                <span>Manage templates for <span className="font-semibold text-gray-700">{selectedOrganization.name}</span></span>
+              ) : (
+                "Upload and manage your document templates"
+              )}
             </p>
-          </div>
-          
-          {/* Organization Selector */}
-          <div className="flex items-center gap-3">
-            {loadingOrgs ? (
-              <div className="text-sm text-gray-500">Loading organizations...</div>
-            ) : organizations.length > 0 ? (
-              <div className="flex items-center gap-2">
-                <label htmlFor="org-select" className="text-sm text-gray-600 font-medium">
-                  Organization:
-                </label>
-                <select
-                  id="org-select"
-                  value={selectedOrgId}
-                  onChange={(e) => setSelectedOrgId(e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
-                >
-                  {organizations.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="text-sm text-yellow-600">No organization found</div>
-            )}
           </div>
         </div>
       </div>
@@ -397,31 +338,11 @@ export default function TemplateComponent() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Organization <span className="text-red-500">*</span>
+                  Organization
                 </label>
-                {loadingOrgs ? (
-                  <div className="text-sm text-gray-500 py-2">Loading organizations...</div>
-                ) : organizations.length === 0 ? (
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-xs text-yellow-800">
-                      No organizations found. Please create one first.
-                    </p>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedOrgId}
-                    onChange={(e) => setSelectedOrgId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
-                    disabled={isUploading}
-                  >
-                    <option value="">Select an organization</option>
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {org.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                  {selectedOrganization?.name || 'No organization selected'}
+                </div>
               </div>
 
               <div>
@@ -508,7 +429,7 @@ export default function TemplateComponent() {
               </button>
               <button
                 onClick={handleUpload}
-                disabled={isUploading || !templateName.trim() || !selectedOrgId || loadingOrgs}
+                disabled={isUploading || !templateName.trim() || !organizationId}
                 className="flex-1 px-4 py-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
               >
                 {isUploading ? (

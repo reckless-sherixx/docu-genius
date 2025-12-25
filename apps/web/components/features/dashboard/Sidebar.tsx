@@ -1,6 +1,8 @@
 "use client";
 import React, { useState } from "react";
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "./SidebarComponent";
+import { useOrganization } from "@/contexts/OrganizationContext";
+import { usePathname, useRouter } from "next/navigation";
 import {
   IconArrowLeft,
   IconSettings,
@@ -10,19 +12,21 @@ import {
   IconUsers,
   IconBookmark,
   IconPlus,
+  IconChevronDown,
 } from "@tabler/icons-react";
 import { motion } from "motion/react";
 import CloudIcon from "@/public/CloudWhite.png";
 import DashboardContent from "./DashboardContent";
 import Image from "next/image";
-import Link from "next/link";
-import { Button } from "@workspace/ui/components/button";
 
 export function SidebarDemo({ children }: { children?: React.ReactNode }) {
+  const pathname = usePathname();
+  const organizationId = pathname?.split('/')[2]; // Extract organizationId from /dashboard/[organizationId]/...
+  
   const mainLinks = [
     {
       label: "Dashboard",
-      href: "/dashboard",
+      href: `/dashboard/${organizationId}`,
       icon: (
         <IconLayoutDashboard className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
@@ -32,14 +36,14 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const analyticsLinks = [
     {
       label: "Templates",
-      href: "/dashboard/templates",
+      href: `/dashboard/${organizationId}/templates`,
       icon: (
         <IconTrendingUp className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
     {
       label: "Upload Template",
-      href: "/dashboard/template",
+      href: `/dashboard/${organizationId}/template`,
       icon: (
         <IconFileText className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
@@ -144,24 +148,8 @@ const SidebarContent = ({
         </motion.div>
       </div>
 
-      {/* Create New Template Button */}
-      <div className="px-2 mb-6 sm:mb-8">
-        <Button asChild className="w-full flex items-center justify-center gap-2 bg-[rgb(132,42,59)] hover:bg-[rgb(139,42,52)] text-white font-medium py-2 px-3 sm:px-4 rounded-lg transition text-sm">
-          <Link href="/dashboard/create-template">
-            <IconPlus className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
-            <motion.span
-              animate={{
-                display: animate ? (open ? "inline-block" : "none") : "inline-block",
-                opacity: animate ? (open ? 1 : 0) : 1,
-              }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="whitespace-nowrap"
-            >
-              Create New Template
-            </motion.span>
-          </Link>
-        </Button>
-      </div>
+      {/* Organization Selector */}
+      <OrganizationSelector />  
 
       {/* Dashboard Section */}
       <div className="flex flex-col px-4">
@@ -286,5 +274,168 @@ export const LogoIcon = () => {
         <span className="text-white dark:text-black font-bold text-sm">D</span>
       </div>
     </a>
+  );
+};
+
+// Organization Selector Component
+const OrganizationSelector = () => {
+  const { open, animate } = useSidebar();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { organizations, loadingOrgs } = useOrganization();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Extract organizationId from URL
+  const organizationId = pathname?.split('/')[2]; // /dashboard/[organizationId]/...
+  const selectedOrganization = organizations.find(org => org.id === organizationId);
+
+  const handleOrganizationChange = (orgId: string) => {
+    // Preserve the current route structure but change organization
+    const pathParts = pathname?.split('/') || [];
+    if (pathParts.length >= 3 && pathParts[1] === 'dashboard') {
+      // Replace organizationId in path
+      pathParts[2] = orgId;
+      router.push(pathParts.join('/'));
+    } else {
+      // Default to dashboard home for that organization
+      router.push(`/dashboard/${orgId}`);
+    }
+    setIsDropdownOpen(false);
+  };
+
+  if (loadingOrgs) {
+    return (
+      <div className="px-3 mb-6">
+        <div className="flex items-center justify-center gap-2 py-3 text-sm text-gray-500">
+          <div className="h-4 w-4 border-2 border-gray-300 border-t-[rgb(132,42,59)] rounded-full animate-spin"></div>
+          <motion.span
+            animate={{
+              display: animate ? (open ? "inline" : "none") : "inline",
+              opacity: animate ? (open ? 1 : 0) : 1,
+            }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+          >
+            Loading...
+          </motion.span>
+        </div>
+      </div>
+    );
+  }
+
+  if (organizations.length === 0) {
+    return (
+      <div className="px-3 mb-6">
+        <div className="text-xs text-yellow-600 text-center py-2">
+          No organizations
+        </div>
+      </div>
+    );
+  }
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  return (
+    <div className="px-3 mb-6 relative">
+      <motion.div 
+        className="mb-2 px-2"
+        animate={{
+          display: animate ? (open ? "block" : "none") : "block",
+          opacity: animate ? (open ? 1 : 0) : 1,
+        }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
+      >
+        <p className="text-xs font-semibold text-gray-500 uppercase">
+          ORGANIZATIONS
+        </p>
+      </motion.div>
+
+      {/* Selected Organization Display */}
+      <button
+        onClick={() => open && setIsDropdownOpen(!isDropdownOpen)}
+        className={`w-full flex items-center gap-3 px-2 py-2 hover:bg-gray-50 hover:border hover:border-gray-200 rounded-lg transition-all hover:shadow group ${
+          open ? 'justify-start' : 'justify-center'
+        }`}
+      >
+        {/* Organization Icon */}
+        <div className="h-10 w-10 shrink-0 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold text-base">
+          {selectedOrganization ? getInitials(selectedOrganization.name) : 'S'}
+        </div>
+
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, width: 0 }}
+            animate={{
+              opacity: animate ? 1 : 1,
+              width: animate ? "auto" : "auto",
+            }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="flex-1 text-left min-w-0"
+          >
+            <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
+              {selectedOrganization?.name || 'Select Organization'}
+            </p>
+          </motion.div>
+        )}
+
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: animate ? 1 : 1,
+            }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="shrink-0"
+          >
+            <IconChevronDown className={`h-4 w-4 text-gray-500 transition-transform group-hover:text-gray-700 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+          </motion.div>
+        )}
+      </button>
+
+      {/* Dropdown Menu */}
+      {isDropdownOpen && open && (
+        <>
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={() => setIsDropdownOpen(false)}
+          />
+          <div className="absolute left-3 right-3 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20 max-h-64 overflow-y-auto">
+            {organizations.map((org) => (
+              <button
+                key={org.id}
+                onClick={() => handleOrganizationChange(org.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                  org.id === organizationId ? 'bg-blue-50' : ''
+                }`}
+              >
+                <div className={`h-10 w-10 shrink-0 rounded-md flex items-center justify-center text-white font-bold text-base ${
+                  org.id === organizationId ? 'bg-blue-600' : 'bg-gray-500'
+                }`}>
+                  {getInitials(org.name)}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <p className={`text-sm font-semibold truncate ${
+                    org.id === organizationId ? 'text-blue-600' : 'text-gray-900'
+                  }`}>
+                    {org.name}
+                  </p>
+                </div>
+                {org.id === organizationId && (
+                  <svg className="h-5 w-5 text-blue-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 };
