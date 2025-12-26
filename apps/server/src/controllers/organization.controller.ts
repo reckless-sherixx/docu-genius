@@ -30,6 +30,40 @@ export class OrganizationController {
         }
     }
 
+    static async getOrganizationMembers(req: Request, res: Response) {
+        try {
+            const { organizationId } = req.params;
+            const userId = req.userId || req.user?.id;
+            
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not authenticated',
+                });
+            }
+
+            if (!organizationId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Organization ID is required',
+                });
+            }
+
+            const members = await OrganizationService.getOrganizationMembers(organizationId, userId);
+
+            res.status(200).json({
+                success: true,
+                data: members,
+            });
+        } catch (error: any) {
+            console.error('Error fetching organization members:', error);
+            return res.status(error.message?.includes('not a member') ? 403 : 500).json({
+                success: false,
+                message: error.message || 'Internal server error',
+            });
+        }
+    }
+
     static async createOrganization(req: Request, res: Response) {
         try { 
             const validatedData = createOrganizationSchema.parse(req.body);

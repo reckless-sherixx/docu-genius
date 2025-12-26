@@ -41,9 +41,13 @@ export const authOptions: AuthOptions = {
             },
             async authorize(credentials, req) {
                 const { data } = await axios.post(LOGIN_URL, credentials)
-                const user = data?.data;
-                if (user) {
-                    return user
+                const result = data?.data;
+                if (result && result.user && result.token) {
+                    // Return user with token attached
+                    return {
+                        ...result.user,
+                        token: result.token
+                    }
                 } else {
                     return null
                 }

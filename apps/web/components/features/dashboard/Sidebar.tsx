@@ -52,6 +52,13 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
 
   const organizationLinks = [
     {
+      label: "Members",
+      href: `/dashboard/${organizationId}/members`,
+      icon: (
+        <IconUsers className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    {
       label: "Shared Documents",
       href: "#",
       icon: (
@@ -286,7 +293,7 @@ const OrganizationSelector = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Extract organizationId from URL
-  const organizationId = pathname?.split('/')[2]; // /dashboard/[organizationId]/...
+  const organizationId = pathname?.split('/')[2]; 
   const selectedOrganization = organizations.find(org => org.id === organizationId);
 
   const handleOrganizationChange = (orgId: string) => {
@@ -364,7 +371,7 @@ const OrganizationSelector = () => {
         }`}
       >
         {/* Organization Icon */}
-        <div className="h-10 w-10 shrink-0 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold text-base">
+        <div className="h-10 w-10 shrink-0 rounded-md bg-[rgb(132,42,59)] flex items-center justify-center text-white font-bold text-base">
           {selectedOrganization ? getInitials(selectedOrganization.name) : 'S'}
         </div>
 

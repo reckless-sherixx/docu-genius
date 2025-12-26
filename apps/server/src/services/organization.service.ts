@@ -33,6 +33,58 @@ export class OrganizationService {
         }
     }
 
+    static async getOrganizationMembers(organizationId: string, userId: string) {
+        try {
+            // First verify that the requesting user is a member of this organization
+            const userMembership = await prisma.organizationMember.findUnique({
+                where: {
+                    organization_id_user_id: {
+                        organization_id: organizationId,
+                        user_id: userId,
+                    }
+                }
+            });
+
+            if (!userMembership) {
+                throw new Error('You are not a member of this organization');
+            }
+
+            // Fetch all members of the organization
+            const members = await prisma.organizationMember.findMany({
+                where: {
+                    organization_id: organizationId,
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            created_at: true,
+                        }
+                    }
+                },
+                orderBy: [
+                    { role: 'asc' }, // ADMIN first, then CREATOR
+                    { joined_at: 'asc' }
+                ]
+            });
+
+            return members.map((member) => ({
+                id: member.id,
+                user_id: member.user.id,
+                name: member.user.name,
+                email: member.user.email,
+                role: member.role,
+                joined_at: member.joined_at,
+                user_created_at: member.user.created_at,
+            }));
+        } catch (error) {
+            console.error('❌ Failed to fetch organization members:', error);
+            throw error;
+        }
+    }
+
     static async createOrganization(data: createOrganizationInput & { organization_head_id: string }) {
         try {
             // Generate a random 6-digit organization PIN
