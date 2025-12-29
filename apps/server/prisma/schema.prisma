@@ -144,44 +144,8 @@ model Template {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  fields   TemplateField[]
-  versions TemplateVersion[]
-
   @@index([organization_id])
   @@index([uploaded_by])
   @@index([status])
   @@index([is_temporary, expires_at])
-}
-
-model TemplateField {
-  id               String    @id @default(uuid())
-  template_id      String
-  field_name       String    @db.VarChar(191)
-  field_type       FieldType @default(TEXT)
-  placeholder      String
-  is_required      Boolean   @default(true)
-  default_value    String?
-  validation_rules Json?
-  position_data    Json?
-
-  created_at DateTime @default(now())
-  template   Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
-
-  @@index([template_id])
-}
-
-model TemplateVersion {
-  id          String   @id @default(uuid())
-  template_id String
-  version     Int
-  s3_key      String
-  s3_url      String
-  changes     String?  @db.Text
-  created_by  String?
-  created_at  DateTime @default(now())
-
-  template Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
-
-  @@unique([template_id, version])
-  @@index([template_id])
 }

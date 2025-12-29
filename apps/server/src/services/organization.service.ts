@@ -65,7 +65,7 @@ export class OrganizationService {
                     }
                 },
                 orderBy: [
-                    { role: 'asc' }, // ADMIN first, then CREATOR
+                    { role: 'asc' },
                     { joined_at: 'asc' }
                 ]
             });
@@ -81,6 +81,82 @@ export class OrganizationService {
             }));
         } catch (error) {
             console.error('❌ Failed to fetch organization members:', error);
+            throw error;
+        }
+    }
+
+    static async updateMemberRole(organizationId: string, memberId: string, role: "ADMIN" | "CREATOR", userId: string) {
+        try {
+            await prisma.$transaction(async (tx) => {
+                const user = await tx.organizationMember.findUnique({
+                    where: {
+                        organization_id_user_id: {
+                            organization_id: organizationId,
+                            user_id: userId,
+                        }
+                    }
+                });
+
+                if (user?.role !== 'ADMIN') {
+                    throw new Error('Only ADMIN members can manage member roles');
+                }
+                await tx.organizationMember.updateMany({
+                    where: {
+                        organization_id: organizationId,
+                        user_id: memberId,
+                    },
+                    data: {
+                        role: role,
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('❌ Failed to change member permissions:', error);
+            throw error;
+        }
+    }
+
+    static async removeMember(organizationId: string, memberId: string, userId: string) {
+        try {
+            await prisma.$transaction(async (tx) => {
+                const requestingUser = await tx.organizationMember.findUnique({
+                    where: {
+                        organization_id_user_id: {
+                            organization_id: organizationId,
+                            user_id: userId,
+                        }
+                    }
+                });
+
+                if (requestingUser?.role !== 'ADMIN') {
+                    throw new Error('Only ADMIN members can remove members');
+                }
+
+                // Check if trying to remove self
+                if (userId === memberId) {
+                    throw new Error('You cannot remove yourself from the organization');
+                }
+
+                // Check if the organization head is being removed
+                const organization = await tx.organization.findUnique({
+                    where: { id: organizationId },
+                    select: { organization_head_id: true }
+                });
+
+                if (organization?.organization_head_id === memberId) {
+                    throw new Error('Cannot remove the organization head');
+                }
+
+                // Remove the member
+                await tx.organizationMember.deleteMany({
+                    where: {
+                        organization_id: organizationId,
+                        user_id: memberId,
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('❌ Failed to remove member:', error);
             throw error;
         }
     }
@@ -149,12 +225,11 @@ export class OrganizationService {
                 throw new Error('You are already a member of this organization');
             }
 
-            // Add user as an ADMIN
             const member = await prisma.organizationMember.create({
                 data: {
                     organization_id: organization.id,
                     user_id: userId,
-                    role: 'ADMIN',
+                    role: 'CREATOR',
                 }
             });
 

@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { usePathname } from 'next/navigation';
 
 export interface Organization {
   id: string;
@@ -22,7 +21,6 @@ const STORAGE_KEY = 'docu_organizations';
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
-  const pathname = usePathname();
   const fetchedRef = useRef(false);
   
   // Initialize from localStorage
@@ -80,10 +78,8 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
 
   // Only fetch once on initial mount if no cached data exists
   useEffect(() => {
-    // Skip if already fetched
     if (fetchedRef.current) return;
-    
-    // Skip if we have cached data
+  
     if (organizations.length > 0) {
       fetchedRef.current = true;
       return;

@@ -15,7 +15,6 @@ export function OnboardingPage() {
     const [orgName, setOrgName] = useState("");
     const [orgDescription, setOrgDescription] = useState("");
 
-    // Join organization state
     const [orgPin, setOrgPin] = useState("");
 
     const handleCreateOrganization = async (e: React.FormEvent) => {
@@ -42,6 +41,7 @@ export function OnboardingPage() {
             const data = await response.json();
 
             if (response.ok) {
+                router.refresh();
                 router.push("/dashboard");
             } else {
                 alert(data.message || "Failed to create organization");
@@ -78,6 +78,7 @@ export function OnboardingPage() {
             const data = await response.json();
 
             if (response.ok) {
+                router.refresh();
                 router.push("/dashboard");
             } else {
                 alert(data.message || "Failed to join organization");

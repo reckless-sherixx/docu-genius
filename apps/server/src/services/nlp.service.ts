@@ -1,6 +1,5 @@
 import { NlpManager } from 'node-nlp';
 
-// Import training data from dedicated file
 import {
     EntityType,
     FIRST_NAMES,
@@ -12,13 +11,8 @@ import {
     MONTHS,
     DATE_WORDS,
     REGEX_PATTERNS,
-    HR_DOCUMENT_KEYWORDS,
-    LEGAL_DOCUMENT_KEYWORDS,
-    DURATION_TERMS,
-    BENEFIT_TERMS,
 } from '../lib/data/nlp-training-data.js';
 
-// Re-export EntityType for external use
 export { EntityType };
 
 export interface ExtractedEntity {
@@ -79,9 +73,8 @@ export class NlpService {
 
         console.log('📚 Loading training data...');
 
-        // ============================================
         // PERSON NAMES - First and last names
-        // ============================================
+    
         FIRST_NAMES.forEach(name => {
             this.manager!.addNamedEntityText('PERSON', 'firstName', ['en'], [name]);
         });
@@ -89,37 +82,33 @@ export class NlpService {
             this.manager!.addNamedEntityText('PERSON', 'lastName', ['en'], [name]);
         });
 
-        // ============================================
         // ORGANIZATIONS - Companies, institutions
-        // ============================================
+
         ORGANIZATIONS.forEach(org => {
             this.manager!.addNamedEntityText('ORGANIZATION', 'company', ['en'], [org]);
         });
 
-        // ============================================
         // JOB ROLES & TITLES
-        // ============================================
+
         ROLES.forEach(role => {
             this.manager!.addNamedEntityText('ROLE', 'jobTitle', ['en'], [role]);
         });
 
-        // ============================================
+
         // LOCATIONS - Countries, cities, states
-        // ============================================
+
         LOCATIONS.forEach(loc => {
             this.manager!.addNamedEntityText('LOCATION', 'place', ['en'], [loc]);
         });
 
-        // ============================================
         // GENDER PRONOUNS
-        // ============================================
+
         GENDER_PRONOUNS.forEach(pronoun => {
             this.manager!.addNamedEntityText('GENDER_PRONOUN', 'pronoun', ['en'], [pronoun]);
         });
 
-        // ============================================
         // MONTHS AND DATE WORDS
-        // ============================================
+
         MONTHS.forEach(month => {
             this.manager!.addNamedEntityText('DATE', 'month', ['en'], [month]);
         });
@@ -127,9 +116,9 @@ export class NlpService {
             this.manager!.addNamedEntityText('DATE', 'dateWord', ['en'], [word]);
         });
 
-        // ============================================
+
         // REGEX PATTERNS - Dates, Money, IDs, etc.
-        // ============================================
+    
         // Date patterns
         REGEX_PATTERNS.DATE.forEach(pattern => {
             this.manager!.addRegexEntity('DATE', 'en', pattern);
@@ -155,17 +144,6 @@ export class NlpService {
             this.manager!.addRegexEntity('PHONE', 'en', pattern);
         });
 
-        // ============================================
-        // TRAIN THE MODEL
-        // ============================================
-        console.log('📚 Training NLP model with entity data...');
-        console.log(`   - ${FIRST_NAMES.length} first names`);
-        console.log(`   - ${LAST_NAMES.length} last names`);
-        console.log(`   - ${ORGANIZATIONS.length} organizations`);
-        console.log(`   - ${ROLES.length} job roles`);
-        console.log(`   - ${LOCATIONS.length} locations`);
-        console.log(`   - ${GENDER_PRONOUNS.length} gender pronouns`);
-        console.log(`   - ${MONTHS.length + DATE_WORDS.length} date-related words`);
         
         await this.manager!.train();
         console.log('✅ NLP model training complete');
@@ -767,9 +745,6 @@ export class NlpService {
             });
         }
 
-        console.log('\n   ─────────────────────────────────────────');
-        console.log(`   📊 SUMMARY: ${entities.length} entities, ${placeholders.length} placeholders`);
-        console.log('=================================================\n');
     }
 
     /**

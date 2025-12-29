@@ -64,6 +64,83 @@ export class OrganizationController {
         }
     }
 
+    static async updateMemberRole(req: Request, res: Response) {
+        try {
+            const { organizationId, memberId } = req.params;
+            const { role } = req.body;
+
+            const userId = req.userId || req.user?.id;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not authenticated',
+                });
+            }
+
+            if (!organizationId || !memberId || !role) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Organization ID, Member ID and Role are required',
+                });
+            }
+
+            if (role !== 'ADMIN' && role !== 'CREATOR') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid role. Must be ADMIN or CREATOR',
+                });
+            }
+
+            await OrganizationService.updateMemberRole(organizationId, memberId, role, userId);
+
+            return res.status(200).json({
+                success: true,
+                message: 'Member role updated successfully',
+            });
+        } catch (error: any) {
+            console.error('Error updating member role:', error);
+            return res.status(error.message?.includes('Only ADMIN') ? 403 : 500).json({
+                success: false,
+                message: error.message || 'Internal server error',
+            });
+        }
+    }
+
+    static async removeMember(req: Request, res: Response) {
+        try {
+            const { organizationId, memberId } = req.params;
+            const userId = req.userId || req.user?.id;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not authenticated',
+                });
+            }
+
+            if (!organizationId || !memberId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Organization ID and Member ID are required',
+                });
+            }
+
+            await OrganizationService.removeMember(organizationId, memberId, userId);
+
+            return res.status(200).json({
+                success: true,
+                message: 'Member removed successfully',
+            });
+        } catch (error: any) {
+            console.error('Error removing member:', error);
+            return res.status(error.message?.includes('Only ADMIN') || error.message?.includes('cannot remove') ? 403 : 500).json({
+                success: false,
+                message: error.message || 'Internal server error',
+            });
+        }
+    }
+
     static async createOrganization(req: Request, res: Response) {
         try { 
             const validatedData = createOrganizationSchema.parse(req.body);

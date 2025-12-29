@@ -294,27 +294,6 @@ export default function TemplateComponent() {
                 </div>
               </div>
             </div>
-
-            {/* Upload Result */}
-            {uploadResult && (
-              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-800 font-medium mb-3">✅ Upload Successful!</p>
-                <div className="space-y-2 text-sm text-green-700">
-                  <p><strong>ID:</strong> {uploadResult.id}</p>
-                  <p><strong>Name:</strong> {uploadResult.name}</p>
-                  <p><strong>Size:</strong> {(uploadResult.size / 1024).toFixed(2)} KB</p>
-                  <p><strong>Category:</strong> {uploadResult.category}</p>
-                  <a 
-                    href={uploadResult.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-block mt-2 text-blue-600 hover:underline font-medium"
-                  >
-                    View in S3 →
-                  </a>
-                </div>
-              </div>
-            )}
           </div>
         </div>
         
