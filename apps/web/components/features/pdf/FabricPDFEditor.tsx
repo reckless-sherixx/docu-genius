@@ -1119,12 +1119,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const allTextElements = extractAllTextFromCanvases();
             const allImageElements = extractAllImagesFromCanvases();
 
-            console.log('📝 Text elements:', allTextElements.length);
-            console.log('🖼️ Image elements:', allImageElements.length);
-            if (allImageElements.length > 0) {
-                console.log('🖼️ First image:', { ...allImageElements[0], dataUrl: allImageElements[0].dataUrl?.substring(0, 50) + '...' });
-            }
-
             // First save current edits
             const saveResponse = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
                 method: 'POST',
