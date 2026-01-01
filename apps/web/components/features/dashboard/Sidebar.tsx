@@ -11,7 +11,6 @@ import {
   IconTrendingUp,
   IconUsers,
   IconBookmark,
-  IconPlus,
   IconChevronDown,
 } from "@tabler/icons-react";
 import { motion } from "motion/react";
@@ -59,16 +58,8 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
       ),
     },
     {
-      label: "Shared Documents",
-      href: "#",
-      icon: (
-        <IconUsers className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
-      ),
-      badge: "5",
-    },
-    {
-      label: "Leads",
-      href: "#",
+      label: "Generated Documents",
+      href: `/dashboard/${organizationId}/generated-documents`,
       icon: (
         <IconBookmark className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),

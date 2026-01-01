@@ -63,6 +63,7 @@ model User {
   ownedOrganizations      Organization[]       @relation("OrganizationOwner")
   organizationMemberships OrganizationMember[]
   sentInvites             OrganizationInvite[] @relation("InviteSender")
+  generatedDocuments      GeneratedDocument[]
 }
 
 model Organization {
@@ -76,6 +77,7 @@ model Organization {
   updated_at           DateTime             @updatedAt
   members              OrganizationMember[]
   invites              OrganizationInvite[]
+  generatedDocuments   GeneratedDocument[]
 }
 
 model OrganizationMember {
@@ -144,8 +146,45 @@ model Template {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
+  // Relations
+  fields             TemplateField[]
+  generatedDocuments GeneratedDocument[]
+
   @@index([organization_id])
   @@index([uploaded_by])
   @@index([status])
   @@index([is_temporary, expires_at])
+}
+
+model TemplateField {
+  id            String    @id @default(uuid())
+  template_id   String
+  field_name    String    @db.VarChar(191)
+  field_type    FieldType @default(TEXT)
+  placeholder   String    @db.VarChar(191)
+  position_data Json?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  template Template @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  @@index([template_id])
+}
+
+model GeneratedDocument {
+  id                     String @id @default(uuid())
+  generated_document_url String
+  template_id            String
+  generated_by           String
+
+  created_at      DateTime @default(now())
+  organization_id String?
+
+  template     Template      @relation(fields: [template_id], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [generated_by], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([template_id])
+  @@index([organization_id])
 }

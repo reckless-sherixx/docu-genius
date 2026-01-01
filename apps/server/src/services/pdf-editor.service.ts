@@ -599,9 +599,15 @@ export class PDFEditorService {
         templateId: string,
         textElements: any[],
         deletedElements: any[],
-        organizationId: string
+        organizationId: string,
+        imageElements: any[] = []
     ): Promise<any> {
         try {
+            console.log('🔧 saveEditablePDF called with:');
+            console.log('  - textElements:', textElements.length);
+            console.log('  - imageElements:', imageElements.length);
+            console.log('  - deletedElements:', deletedElements.length);
+
             // Get original template
             const originalTemplate = await prisma.template.findUnique({
                 where: { id: templateId },
@@ -614,11 +620,12 @@ export class PDFEditorService {
             // Download original PDF
             const originalBuffer = await s3Service.downloadFileAsBuffer(originalTemplate.s3_key);
 
-            // Generate new PDF with modified text
-            const editedPdfBuffer = await this.rebuildPDFWithText(
+            // Generate new PDF with modified text and images
+            const editedPdfBuffer = await this.rebuildPDFWithTextAndImages(
                 originalBuffer,
                 textElements,
-                deletedElements
+                deletedElements,
+                imageElements
             );
 
             // Upload to S3 with unique key
@@ -630,14 +637,15 @@ export class PDFEditorService {
             // Upload PDF buffer to S3
             await s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf');
 
-            // Also save text elements JSON to S3 
-            const textElementsJson = JSON.stringify({
+            // Also save text and image elements JSON to S3 
+            const elementsJson = JSON.stringify({
                 textElements,
+                imageElements,
                 deletedElements,
                 savedAt: new Date().toISOString(),
             });
-            await s3Service.uploadFile(textElementsS3Key, Buffer.from(textElementsJson), 'application/json');
-            console.log('💾 Saved text elements JSON to S3:', textElementsS3Key);
+            await s3Service.uploadFile(textElementsS3Key, Buffer.from(elementsJson), 'application/json');
+            console.log('💾 Saved elements JSON to S3:', textElementsS3Key);
 
             // Save to database with expiration (2 hours)
             const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
@@ -769,6 +777,174 @@ export class PDFEditorService {
         } catch (error) {
             console.error('❌ Error rebuilding PDF:', error);
             throw error;
+        }
+    }
+
+    private async rebuildPDFWithTextAndImages(
+        originalBuffer: Buffer,
+        textElements: any[],
+        deletedElements: any[],
+        imageElements: any[]
+    ): Promise<Buffer> {
+        try {
+            // Load original PDF
+            const originalDoc = await PDFDocument.load(originalBuffer);
+            const originalPages = originalDoc.getPages();
+            
+            // Create new PDF document
+            const newPdfDoc = await PDFDocument.create();
+
+            // Process each page
+            for (let pageNum = 1; pageNum <= originalPages.length; pageNum++) {
+                const originalPage = originalPages[pageNum - 1];
+                if (!originalPage) continue;
+                
+                const { width, height } = originalPage.getSize();
+
+                // Create new blank page
+                const newPage = newPdfDoc.addPage([width, height]);
+
+                // Embed the original page (includes images, graphics, AND original text)
+                const embeddedPage = await newPdfDoc.embedPage(originalPage);
+                newPage.drawPage(embeddedPage, {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                });
+
+                // Get text elements for this page
+                const pageTextElements = textElements.filter(el => el.page === pageNum);
+                const activeTextElements = pageTextElements.filter(element => {
+                    const isDeleted = deletedElements.some(
+                        del => del.id === element.id && del.page === pageNum
+                    );
+                    return !isDeleted;
+                });
+
+                console.log(`📄 Page ${pageNum}: ${activeTextElements.length} text elements, ${imageElements.filter(img => img.page === pageNum).length} images`);
+
+                // Draw white rectangles to cover original text that will be replaced
+                for (const element of activeTextElements) {
+                    const padding = 4; 
+                    const rectX = Math.max(0, (element.x / 2) - padding);
+                    const rectHeight = (element.height / 2) + (padding * 2);
+                    const rectY = height - (element.y / 2) - rectHeight + padding;
+                    const rectWidth = (element.width / 2) + (padding * 2);
+
+                    newPage.drawRectangle({
+                        x: rectX,
+                        y: rectY,
+                        width: rectWidth,
+                        height: rectHeight,
+                        color: rgb(1, 1, 1), 
+                        borderWidth: 0,
+                    });
+                }
+
+                // Cover deleted elements 
+                const deletedOnPage = deletedElements.filter(del => del.page === pageNum);
+                for (const element of deletedOnPage) {
+                    const originalElement = textElements.find(
+                        te => te.id === element.id && te.page === pageNum
+                    );
+                    if (originalElement) {
+                        const padding = 4;
+                        const rectX = Math.max(0, (originalElement.x / 2) - padding);
+                        const rectHeight = (originalElement.height / 2) + (padding * 2);
+                        const rectY = height - (originalElement.y / 2) - rectHeight + padding;
+                        const rectWidth = (originalElement.width / 2) + (padding * 2);
+
+                        newPage.drawRectangle({
+                            x: rectX,
+                            y: rectY,
+                            width: rectWidth,
+                            height: rectHeight,
+                            color: rgb(1, 1, 1),
+                            borderWidth: 0,
+                        });
+                    }
+                }
+
+                // Draw new text on top
+                for (const element of activeTextElements) {
+                    await this.addTextElement(newPdfDoc, newPage, element);
+                }
+
+                // Draw images/signatures on this page
+                const pageImages = imageElements.filter(img => img.page === pageNum);
+                for (const imageEl of pageImages) {
+                    await this.addImageElement(newPdfDoc, newPage, imageEl, height);
+                }
+            }
+
+            // Save the new PDF
+            const pdfBytes = await newPdfDoc.save();
+            
+            return Buffer.from(pdfBytes);
+        } catch (error) {
+            console.error('❌ Error rebuilding PDF with images:', error);
+            throw error;
+        }
+    }
+
+    private async addImageElement(pdfDoc: PDFDocument, page: PDFPage, element: any, pageHeight: number): Promise<void> {
+        try {
+            const { dataUrl, x, y, width, height } = element;
+            
+            console.log(`🖼️ Processing image element:`, {
+                id: element.id,
+                type: element.type,
+                x, y, width, height,
+                hasDataUrl: !!dataUrl,
+                dataUrlLength: dataUrl?.length || 0
+            });
+            
+            if (!dataUrl) {
+                console.warn('⚠️ Image element missing dataUrl, skipping');
+                return;
+            }
+
+            // Extract base64 data from data URL
+            const base64Match = dataUrl.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/);
+            if (!base64Match) {
+                console.warn('⚠️ Invalid dataUrl format, skipping');
+                return;
+            }
+            
+            const imageType = base64Match[1];
+            const base64Data = base64Match[2];
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            
+            console.log(`🖼️ Image type: ${imageType}, buffer size: ${imageBuffer.length}`);
+
+            // Determine image type and embed
+            let embeddedImage;
+            if (imageType === 'png') {
+                embeddedImage = await pdfDoc.embedPng(imageBuffer);
+            } else {
+                embeddedImage = await pdfDoc.embedJpg(imageBuffer);
+            }
+
+            // Calculate position (PDF coordinates are from bottom-left)
+            // Divide by 2 because canvas renders at 2x scale (consistent with text elements)
+            const imgX = x / 2;
+            const imgWidth = width / 2;
+            const imgHeight = height / 2;
+            const imgY = pageHeight - (y / 2) - imgHeight;
+
+            // Draw the image
+            page.drawImage(embeddedImage, {
+                x: imgX,
+                y: imgY,
+                width: imgWidth,
+                height: imgHeight,
+            });
+
+            console.log(`✅ Added ${element.type || 'image'} at (${imgX}, ${imgY}) size ${imgWidth}x${imgHeight}`);
+        } catch (error) {
+            console.error('❌ Error adding image element:', error);
+            // Don't throw - continue with other elements
         }
     }
 

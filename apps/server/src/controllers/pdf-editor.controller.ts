@@ -178,8 +178,14 @@ export class PDFEditorController {
    */
   async saveEditablePDF(req: Request, res: Response): Promise<any> {
     try {
-      const { templateId, textElements, deletedElements } = req.body;
+      const { templateId, textElements, imageElements, deletedElements } = req.body;
       const userId = (req as any).userId;
+
+      console.log('📥 Received saveEditablePDF request:');
+      console.log('  - templateId:', templateId);
+      console.log('  - textElements count:', textElements?.length || 0);
+      console.log('  - imageElements count:', imageElements?.length || 0);
+      console.log('  - deletedElements count:', deletedElements?.length || 0);
 
       if (!templateId || !textElements) {
         return res.status(400).json({
@@ -200,12 +206,13 @@ export class PDFEditorController {
         });
       }
 
-      // Save editable PDF with text modifications
+      // Save editable PDF with text and image modifications
       const result = await pdfEditorService.saveEditablePDF(
         templateId,
         textElements,
         deletedElements || [],
-        template.organization_id
+        template.organization_id,
+        imageElements || []
       );
 
       return res.status(200).json({
@@ -354,29 +361,7 @@ export class PDFEditorController {
   }
 
   /**
-   * Draw shape on PDF
-   */
-  async drawShape(req: Request, res: Response): Promise<any> {
-    try {
-      const { templateId, shapeType, coordinates, style } = req.body;
-
-      // TODO: Implement shape drawing
-
-      return res.status(200).json({
-        success: true,
-        message: 'Shape drawn successfully',
-      });
-    } catch (error) {
-      console.error('❌ Error drawing shape:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to draw shape',
-      });
-    }
-  }
-
-  /**
-   * Save template as permanent (not temporary)
+   * Save template as permanent 
    * This makes the template visible in the templates list
    */
   async savePermanentTemplate(req: Request, res: Response): Promise<any> {
@@ -402,18 +387,16 @@ export class PDFEditorController {
         });
       }
 
-      // Update template to make it permanent
       const updatedTemplate = await prisma.template.update({
         where: { id: templateId },
         data: {
           is_temporary: false,
-          expires_at: null, // Remove expiration
+          expires_at: null, 
           template_name: templateName || template.template_name.replace('Edited - ', ''),
           template_description: templateDescription || template.template_description,
         },
       });
 
-      // Serialize BigInt for JSON response
       const serializedTemplate = {
         ...updatedTemplate,
         file_size: updatedTemplate.file_size ? updatedTemplate.file_size.toString() : null,
@@ -431,6 +414,79 @@ export class PDFEditorController {
       return res.status(500).json({
         success: false,
         message: 'Failed to save permanent template',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Generate a document from a template
+   * Creates a final PDF and saves it to GeneratedDocument table
+   */
+  async generateDocument(req: Request, res: Response): Promise<any> {
+    try {
+      const { templateId, textElements, imageElements } = req.body;
+      const userId = (req as any).userId;
+
+      if (!templateId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template ID is required',
+        });
+      }
+
+      // Get the template
+      const template = await prisma.template.findUnique({
+        where: { id: templateId },
+      });
+
+      if (!template) {
+        return res.status(404).json({
+          success: false,
+          message: 'Template not found',
+        });
+      }
+
+      console.log(`📄 Generating document from template: ${templateId}`);
+
+      // Save the edited PDF using the service that supports images
+      const savedPdf = await pdfEditorService.saveEditablePDF(
+        templateId,
+        textElements || [],
+        [],
+        template.organization_id || '',
+        imageElements || []
+      );
+
+      // Get the S3 URL for the generated document
+      const generatedDocUrl = savedPdf.downloadUrl;
+
+      // Create GeneratedDocument record
+      const generatedDocument = await prisma.generatedDocument.create({
+        data: {
+          generated_document_url: generatedDocUrl,
+          template_id: templateId,
+          generated_by: userId,
+          organization_id: template.organization_id,
+        },
+      });
+
+      console.log(`✅ Document generated successfully: ${generatedDocument.id}`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Document generated successfully',
+        data: {
+          documentId: generatedDocument.id,
+          downloadUrl: generatedDocUrl,
+          templateName: template.template_name,
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error generating document:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate document',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }

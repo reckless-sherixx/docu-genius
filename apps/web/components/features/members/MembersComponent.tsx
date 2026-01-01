@@ -112,7 +112,6 @@ export function MembersComponent() {
 
       if (response.ok) {
         toast.success(data.message || 'Role updated successfully');
-        // Update local state
         setMembers(prevMembers =>
           prevMembers.map(member =>
             member.user_id === memberId ? { ...member, role: newRole } : member
@@ -149,7 +148,6 @@ export function MembersComponent() {
 
       if (response.ok) {
         toast.success(data.message || 'Member removed successfully');
-        // Remove from local state
         setMembers(prevMembers => prevMembers.filter(member => member.user_id !== memberId));
       } else {
         toast.error(data.message || 'Failed to remove member');
@@ -200,7 +198,6 @@ export function MembersComponent() {
             >
               {/* Card Header with Role Badge */}
               <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 p-6 pb-4">
-                {/* Three-dot menu */}
                 {canManage && (
                   <div className="absolute top-4 left-4">
                     <DropdownMenu>

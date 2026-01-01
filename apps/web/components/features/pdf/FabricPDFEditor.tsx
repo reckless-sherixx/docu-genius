@@ -81,6 +81,20 @@ interface TextElement {
     variableName?: string; // Variable name like {{FIRST_NAME}}
 }
 
+interface ImageElement {
+    id: string;
+    type: 'image' | 'signature';
+    dataUrl: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    scaleX: number;
+    scaleY: number;
+    angle: number;
+    page: number;
+}
+
 interface PageCanvas {
     pageNumber: number;
     canvas: fabric.Canvas | null;
@@ -152,11 +166,12 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const [saving, setSaving] = useState(false);
     const [currentTool, setCurrentTool] = useState<string>('select');
     const [scale, setScale] = useState(1.0);
-    const [showTextLayer, setShowTextLayer] = useState(true); // Toggle text visibility
-    const [templateId, setTemplateId] = useState(initialTemplateId); // Track current template ID
-    const [showNlpSidebar, setShowNlpSidebar] = useState(false); // Toggle NLP sidebar
-    const [nlpEntities, setNlpEntities] = useState<NlpEntity[]>([]); // NLP extracted entities
-    const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set()); // Expanded entity type groups
+    const [showTextLayer, setShowTextLayer] = useState(true); 
+    const [templateId, setTemplateId] = useState(initialTemplateId); 
+    const [showNlpSidebar, setShowNlpSidebar] = useState(false); 
+    const [nlpEntities, setNlpEntities] = useState<NlpEntity[]>([]); 
+    const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
+    const [userRole, setUserRole] = useState<"ADMIN" | "CREATOR" | null>(null); 
 
     // Canvas refs
     const canvasRefs = useRef<{ [key: number]: HTMLCanvasElement | null }>({});
@@ -199,6 +214,41 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             });
         };
     }, []);
+
+    // Fetch user's role in the organization
+    useEffect(() => {
+        const fetchUserRole = async () => {
+            if (!session?.user?.token || !organizationId) return;
+
+            try {
+                const response = await fetch(
+                    `${backendUrl}/api/v1/organization/${organizationId}/members`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${session.user.token}`,
+                        },
+                        cache: 'no-store',
+                    }
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.data) {
+                        const currentMember = data.data.find(
+                            (m: any) => m.email === session.user?.email
+                        );
+                        if (currentMember) {
+                            setUserRole(currentMember.role);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching user role:', err);
+            }
+        };
+
+        fetchUserRole();
+    }, [session, organizationId]);
 
     const loadPDF = async () => {
         setLoading(true);
@@ -890,6 +940,50 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         return elements;
     };
 
+    const extractAllImagesFromCanvases = (): ImageElement[] => {
+        const images: ImageElement[] = [];
+
+        Object.entries(fabricCanvases.current).forEach(([pageNum, canvas]) => {
+            const allObjects = canvas.getObjects();
+            console.log(`📸 Page ${pageNum}: Found ${allObjects.length} objects total`);
+            
+            allObjects.forEach((obj: any, index: number) => {
+                // Log all properties to debug
+                console.log(`  Object ${index}: type=${obj.type}`);
+                
+                // Extract ALL images - the background PDF page is set via canvas.backgroundImage,
+                // so it won't appear in getObjects(). All images here are user-added.
+                if (obj.type === 'image') {
+                    try {
+                        const dataUrl = obj.toDataURL({ format: 'png' });
+                        console.log(`  ✅ Extracting image at index ${index}: dataUrl length: ${dataUrl?.length}`);
+                        console.log(`    Position: left=${obj.left}, top=${obj.top}`);
+                        console.log(`    Size: width=${obj.width}, height=${obj.height}, scaleX=${obj.scaleX}, scaleY=${obj.scaleY}`);
+                        
+                        images.push({
+                            id: obj.elementId || `img-${pageNum}-${index}-${Date.now()}`,
+                            type: obj.isSignature ? 'signature' : 'image',
+                            dataUrl: dataUrl,
+                            x: obj.left || 0,
+                            y: obj.top || 0,
+                            width: (obj.width || 100) * (obj.scaleX || 1),
+                            height: (obj.height || 100) * (obj.scaleY || 1),
+                            scaleX: obj.scaleX || 1,
+                            scaleY: obj.scaleY || 1,
+                            angle: obj.angle || 0,
+                            page: parseInt(pageNum),
+                        });
+                    } catch (err) {
+                        console.warn('Could not extract image data:', err);
+                    }
+                }
+            });
+        });
+
+        console.log(`📸 Total images extracted: ${images.length}`);
+        return images;
+    };
+
     const saveCurrentState = () => {
         const allTextElements = extractAllTextFromCanvases();
         const newHistory = history.slice(0, historyIndex + 1);
@@ -1023,6 +1117,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             console.log('💾 Saving as permanent template...');
 
             const allTextElements = extractAllTextFromCanvases();
+            const allImageElements = extractAllImagesFromCanvases();
+
+            console.log('📝 Text elements:', allTextElements.length);
+            console.log('🖼️ Image elements:', allImageElements.length);
+            if (allImageElements.length > 0) {
+                console.log('🖼️ First image:', { ...allImageElements[0], dataUrl: allImageElements[0].dataUrl?.substring(0, 50) + '...' });
+            }
 
             // First save current edits
             const saveResponse = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
@@ -1034,6 +1135,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 body: JSON.stringify({
                     templateId,
                     textElements: allTextElements,
+                    imageElements: allImageElements,
                     deletedElements: [],
                 }),
             });
@@ -1070,6 +1172,47 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         } catch (err) {
             console.error('❌ Error saving permanent template:', err);
             setError(err instanceof Error ? err.message : 'Failed to save template');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const generateDocument = async () => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            console.log('📄 Generating document...');
+
+            const allTextElements = extractAllTextFromCanvases();
+            const allImageElements = extractAllImagesFromCanvases();
+
+            const response = await fetch(`${backendUrl}/api/pdf-editor/generate-document`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+                body: JSON.stringify({
+                    templateId,
+                    textElements: allTextElements,
+                    imageElements: allImageElements,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to generate document');
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert('✅ Document generated successfully!');
+                router.push(`/dashboard/${organizationId}/generated-documents`);
+            }
+        } catch (err) {
+            console.error('❌ Error generating document:', err);
+            setError(err instanceof Error ? err.message : 'Failed to generate document');
         } finally {
             setSaving(false);
         }
@@ -1124,14 +1267,17 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                 fabric.FabricImage.fromURL(imgUrl, {}).then((img: fabric.Image) => {
                     img.scale(0.5);
-                    img.set({
+                    (img as any).set({
                         left: 100,
                         top: 100,
                         selectable: true,
+                        elementId: `img-${Date.now()}`,
+                        isSignature: false,
                     });
                     canvas.add(img);
                     canvas.setActiveObject(img);
                     canvas.renderAll();
+                    saveCurrentState();
                 });
             };
             reader.readAsDataURL(file);
@@ -1455,24 +1601,44 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                         <div className="w-px h-8 bg-gray-300 mx-2" />
 
-                        {/* Save as Template (Permanent) */}
-                        <button
-                            onClick={saveAsPermanentTemplate}
-                            disabled={saving}
-                            className="px-5 py-2.5 bg-gradient-to-r from-[rgb(132,42,59)] to-[rgb(112,32,49)] hover:from-[rgb(112,32,49)] hover:to-[rgb(92,22,39)] text-white text-sm rounded-lg shadow-md transition-all disabled:opacity-50 flex items-center gap-2 font-medium"
-                        >
-                            {saving ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="h-4 w-4" />
-                                    Save as Template
-                                </>
-                            )}
-                        </button>
+                        {/* Role-based action button */}
+                        {userRole === "CREATOR" ? (
+                            <button
+                                onClick={generateDocument}
+                                disabled={saving}
+                                className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm rounded-lg shadow-md transition-all disabled:opacity-50 flex items-center gap-2 font-medium"
+                            >
+                                {saving ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Generating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileText className="h-4 w-4" />
+                                        Generate Document
+                                    </>
+                                )}
+                            </button>
+                        ) : (
+                            <button
+                                onClick={saveAsPermanentTemplate}
+                                disabled={saving}
+                                className="px-5 py-2.5 bg-gradient-to-r from-[rgb(132,42,59)] to-[rgb(112,32,49)] hover:from-[rgb(112,32,49)] hover:to-[rgb(92,22,39)] text-white text-sm rounded-lg shadow-md transition-all disabled:opacity-50 flex items-center gap-2 font-medium"
+                            >
+                                {saving ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="h-4 w-4" />
+                                        Save as Template
+                                    </>
+                                )}
+                            </button>
+                        )}
 
                         <button
                             onClick={() => router.push(`/dashboard/${organizationId}/templates`)}
@@ -1908,6 +2074,8 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                                             scaleX: 0.3 * scale,
                                                             scaleY: 0.3 * scale,
                                                             selectable: true,
+                                                            isSignature: true, // Mark as signature for extraction
+                                                            elementId: `sig-${Date.now()}`,
                                                         });
                                                         canvas.add(img);
                                                         canvas.setActiveObject(img);

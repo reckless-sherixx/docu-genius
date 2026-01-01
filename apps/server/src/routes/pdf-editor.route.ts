@@ -44,12 +44,12 @@ router.post('/highlight', authMiddleware, (req, res) =>
   pdfEditorController.highlightText(req, res)
 );
 
-router.post('/draw-shape', authMiddleware, (req, res) =>
-  pdfEditorController.drawShape(req, res)
-);
-
 router.post('/save-permanent', authMiddleware, (req, res) =>
   pdfEditorController.savePermanentTemplate(req, res)
+);
+
+router.post('/generate-document', authMiddleware, (req, res) =>
+  pdfEditorController.generateDocument(req, res)
 );
 
 export default router;
