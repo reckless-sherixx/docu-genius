@@ -328,4 +328,105 @@ export class AuthService {
 
         return user;
     }
+
+    // Get user profile with organizations
+    static async getUserProfile(userId: string) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                document_generation_pin: true,
+                email_verified_at: true,
+                created_at: true,
+                organizationMemberships: {
+                    include: {
+                        organization: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            hasPin: !!user.document_generation_pin,
+            emailVerified: !!user.email_verified_at,
+            createdAt: user.created_at,
+            organizations: user.organizationMemberships.map(m => ({
+                id: m.organization.id,
+                name: m.organization.name,
+                description: m.organization.description,
+                role: m.role,
+                joinedAt: m.joined_at,
+            }))
+        };
+    }
+
+    // Set or update document generation PIN
+    static async setDocumentPin(userId: string, pin: number) {
+        if (pin < 1000 || pin > 9999) {
+            throw new Error('PIN must be a 4-digit number');
+        }
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { document_generation_pin: pin },
+            select: {
+                id: true,
+                name: true,
+                document_generation_pin: true,
+            }
+        });
+
+        return {
+            message: 'PIN set successfully',
+            hasPin: true,
+        };
+    }
+
+    // Verify document generation PIN
+    static async verifyDocumentPin(userId: string, pin: number) {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { document_generation_pin: true }
+        });
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        if (!user.document_generation_pin) {
+            throw new Error('No PIN set for this user');
+        }
+
+        return user.document_generation_pin === pin;
+    }
+
+    // Update user profile
+    static async updateProfile(userId: string, data: { name?: string }) {
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { name: data.name },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+            }
+        });
+
+        return user;
+    }
 }

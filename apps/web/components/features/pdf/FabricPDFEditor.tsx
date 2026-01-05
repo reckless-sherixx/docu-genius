@@ -293,14 +293,10 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 console.log('✅ Using saved text elements from previous session:', savedTextElements.textElements.length, 'elements');
                 extractedText = savedTextElements.textElements;
             } else {
-                console.log('📝 Step 3: Extracting text from original PDF...');
-                // Extract text with better font detection (only for new PDFs)
+                console.log('📝 Extracting text from original PDF...');
                 extractedText = await extractTextFromPDF(pdf);
                 console.log(`✅ Extracted ${extractedText.length} text blocks`);
             }
-
-            console.log('🔨 Step 4: Getting editable PDF...');
-            // Send to backend to get editable PDF URL
             const response = await fetch(`${backendUrl}/api/pdf-editor/prepare-editable`, {
                 method: 'POST',
                 headers: {
@@ -326,7 +322,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             if (backendNlpEntities && backendNlpEntities.length > 0) {
                 console.log(`📊 Loaded ${backendNlpEntities.length} NLP entities from backend`);
                 setNlpEntities(backendNlpEntities);
-                // Auto-expand all entity types initially
                 const entityTypes = new Set<string>(backendNlpEntities.map((e: NlpEntity) => e.type));
                 setExpandedEntityTypes(entityTypes);
             } else {
@@ -340,8 +335,8 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 // Parse backend OCR text into text elements with proper formatting
                 const rawText = backendExtractedText;
                 const ocrTextElements: TextElement[] = [];
-                const pageHeight = (backendPages?.[0]?.height || 800) * 2; // Scale for canvas
-                const pageWidth = (backendPages?.[0]?.width || 600) * 2;  // Scale for canvas
+                const pageHeight = (backendPages?.[0]?.height || 800) * 2;
+                const pageWidth = (backendPages?.[0]?.width || 600) * 2;  
                 
                 const LEFT_MARGIN = 60;
                 const RIGHT_MARGIN = 60;
@@ -575,7 +570,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const width = item.width * 2;
 
             // Check if this item should be merged with current block
-            // More strict conditions to preserve layout
             if (currentBlock &&
                 Math.abs(currentBlock.y - posY) < scaledFontSize * 0.15 && 
                 posX >= (currentBlock.x + currentBlock.width - 5) && 
@@ -587,12 +581,10 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
                 // Merge with current block
                 const space = posX - (currentBlock.x + currentBlock.width);
-                // Add space only if there's a noticeable gap
                 currentBlock.text += (space > scaledFontSize * 0.2 ? ' ' : '') + item.str;
                 currentBlock.width = (posX + width) - currentBlock.x;
 
             } else {
-                // Start new block (preserve more individual text elements)
                 if (currentBlock) {
                     textBlocks.push(currentBlock);
                 }
@@ -623,7 +615,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const initializeFabricCanvases = (pages: PageCanvas[], texts: TextElement[]) => {
         console.log('🎨 Initializing Fabric.js canvases...');
 
-        // Dispose existing canvases first to prevent "already initialized" error
         Object.values(fabricCanvases.current).forEach(canvas => {
             try {
                 canvas.dispose();
@@ -945,21 +936,11 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
         Object.entries(fabricCanvases.current).forEach(([pageNum, canvas]) => {
             const allObjects = canvas.getObjects();
-            console.log(`📸 Page ${pageNum}: Found ${allObjects.length} objects total`);
             
             allObjects.forEach((obj: any, index: number) => {
-                // Log all properties to debug
-                console.log(`  Object ${index}: type=${obj.type}`);
-                
-                // Extract ALL images - the background PDF page is set via canvas.backgroundImage,
-                // so it won't appear in getObjects(). All images here are user-added.
                 if (obj.type === 'image') {
                     try {
-                        const dataUrl = obj.toDataURL({ format: 'png' });
-                        console.log(`  ✅ Extracting image at index ${index}: dataUrl length: ${dataUrl?.length}`);
-                        console.log(`    Position: left=${obj.left}, top=${obj.top}`);
-                        console.log(`    Size: width=${obj.width}, height=${obj.height}, scaleX=${obj.scaleX}, scaleY=${obj.scaleY}`);
-                        
+                        const dataUrl = obj.toDataURL({ format: 'png' });                        
                         images.push({
                             id: obj.elementId || `img-${pageNum}-${index}-${Date.now()}`,
                             type: obj.isSignature ? 'signature' : 'image',

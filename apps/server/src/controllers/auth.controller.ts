@@ -238,6 +238,129 @@ export class AuthController {
         })
     }
 
+    // Get user profile
+    static async getProfile(req: Request, res: Response) {
+        try {
+            const userId = req.userId;
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
+
+            const profile = await AuthService.getUserProfile(userId);
+
+            return res.status(200).json({
+                success: true,
+                data: profile,
+            });
+        } catch (error) {
+            console.error('❌ Get profile error:', error);
+            return res.status(500).json({
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to get profile',
+            });
+        }
+    }
+
+    // Update user profile
+    static async updateProfile(req: Request, res: Response) {
+        try {
+            const userId = req.userId;
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
+
+            const { name } = req.body;
+            const profile = await AuthService.updateProfile(userId, { name });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Profile updated successfully',
+                data: profile,
+            });
+        } catch (error) {
+            console.error('❌ Update profile error:', error);
+            return res.status(500).json({
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to update profile',
+            });
+        }
+    }
+
+    // Set document generation PIN
+    static async setPin(req: Request, res: Response) {
+        try {
+            const userId = req.userId;
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
+
+            const { pin } = req.body;
+            if (!pin || typeof pin !== 'number') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'PIN is required and must be a number',
+                });
+            }
+
+            const result = await AuthService.setDocumentPin(userId, pin);
+
+            return res.status(200).json({
+                success: true,
+                message: result.message,
+                data: { hasPin: result.hasPin },
+            });
+        } catch (error) {
+            console.error('❌ Set PIN error:', error);
+            return res.status(400).json({
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to set PIN',
+            });
+        }
+    }
+
+    // Verify document generation PIN
+    static async verifyPin(req: Request, res: Response) {
+        try {
+            const userId = req.userId;
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
+
+            const { pin } = req.body;
+            if (!pin || typeof pin !== 'number') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'PIN is required and must be a number',
+                });
+            }
+
+            const isValid = await AuthService.verifyDocumentPin(userId, pin);
+
+            return res.status(200).json({
+                success: true,
+                data: { valid: isValid },
+            });
+        } catch (error) {
+            console.error('❌ Verify PIN error:', error);
+            return res.status(400).json({
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to verify PIN',
+            });
+        }
+    }
+
     // Logout 
     static async logout(req: Request, res: Response) {
         res.status(200).json({

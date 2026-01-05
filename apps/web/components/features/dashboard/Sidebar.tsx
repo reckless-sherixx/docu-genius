@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "./SidebarComponent";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { usePathname, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   IconArrowLeft,
   IconSettings,
@@ -20,9 +21,10 @@ import Image from "next/image";
 
 export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname();
-  const organizationId = pathname?.split('/')[2]; // Extract organizationId from /dashboard/[organizationId]/...
-  
-  const mainLinks = [
+  const { data: session } = useSession();
+  const organizationId = pathname?.split('/')[2]; 
+  const userId = session?.user?.id; 
+ const mainLinks = [
     {
       label: "Dashboard",
       href: `/dashboard/${organizationId}`,
@@ -82,8 +84,8 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
       ),
     },
     {
-      label: "Settings",
-      href: "#",
+      label: "Profile",
+      href: `/${userId}/profile`,
       icon: (
         <IconSettings className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),

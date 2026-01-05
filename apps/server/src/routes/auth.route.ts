@@ -19,4 +19,10 @@ router.get("/secure-route", authMiddleware, AuthController.secureRoute);
 // Protected routes
 router.post("/logout", authMiddleware, AuthController.logout);
 
+// Profile routes
+router.get("/profile", authMiddleware, AuthController.getProfile);
+router.put("/profile", authMiddleware, AuthController.updateProfile);
+router.post("/profile/pin", authMiddleware, AuthController.setPin);
+router.post("/profile/pin/verify", authMiddleware, AuthController.verifyPin);
+
 export default router;
