@@ -255,7 +255,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         setError(null);
 
         try {
-            console.log('📥 Step 1: Loading original PDF...');
 
             const pdfUrl = `/api/proxy/pdf/${templateId}`;
 
@@ -268,10 +267,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const loadingTask = pdfjs.getDocument(pdfUrl);
             const pdf = await loadingTask.promise;
 
-            console.log(`✅ PDF loaded: ${pdf.numPages} pages`);
-
-            console.log('📝 Step 2: Getting PDF data...');
-            // Get PDF data from backend (includes saved text elements)
             const pdfDataResponse = await fetch(`${backendUrl}/api/pdf-editor/${templateId}/open`, {
                 headers: {
                     Authorization: `Bearer ${session?.user?.token}`,
@@ -288,14 +283,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             let extractedText: TextElement[];
 
-            // Check if we have saved text elements from a previous edit session
             if (savedTextElements && savedTextElements.textElements && savedTextElements.textElements.length > 0) {
-                console.log('✅ Using saved text elements from previous session:', savedTextElements.textElements.length, 'elements');
+
                 extractedText = savedTextElements.textElements;
             } else {
-                console.log('📝 Extracting text from original PDF...');
+              
                 extractedText = await extractTextFromPDF(pdf);
-                console.log(`✅ Extracted ${extractedText.length} text blocks`);
+               
             }
             const response = await fetch(`${backendUrl}/api/pdf-editor/prepare-editable`, {
                 method: 'POST',
@@ -316,23 +310,18 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             const editableResult = await response.json();
             const { editablePdfUrl, extractedText: backendExtractedText, pages: backendPages, nlpEntities: backendNlpEntities } = editableResult;
-            console.log('✅ Editable PDF URL retrieved');
 
             // Store NLP entities from backend
             if (backendNlpEntities && backendNlpEntities.length > 0) {
-                console.log(`📊 Loaded ${backendNlpEntities.length} NLP entities from backend`);
                 setNlpEntities(backendNlpEntities);
                 const entityTypes = new Set<string>(backendNlpEntities.map((e: NlpEntity) => e.type));
                 setExpandedEntityTypes(entityTypes);
             } else {
-                console.log('📊 No NLP entities received from backend');
                 setNlpEntities([]);
             }
 
-            // If frontend extraction failed or returned minimal results, use backend OCR text
+        
             if (extractedText.length < 3 && backendExtractedText && backendExtractedText.trim().length > 50) {
-                console.log('📝 Frontend extraction minimal, using backend OCR text...');
-                // Parse backend OCR text into text elements with proper formatting
                 const rawText = backendExtractedText;
                 const ocrTextElements: TextElement[] = [];
                 const pageHeight = (backendPages?.[0]?.height || 800) * 2;
@@ -344,7 +333,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 const LINE_HEIGHT = 26;
                 const FONT_SIZE = 18;
                 const MAX_TEXT_WIDTH = pageWidth - LEFT_MARGIN - RIGHT_MARGIN;
-                const CHARS_PER_LINE = Math.floor(MAX_TEXT_WIDTH / (FONT_SIZE * 0.55)); // Approximate chars per line
+                const CHARS_PER_LINE = Math.floor(MAX_TEXT_WIDTH / (FONT_SIZE * 0.55)); 
                 
                 let currentY = TOP_MARGIN;
                 let currentPage = 1;
@@ -391,7 +380,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         continue;
                     }
                     
-                    // Split paragraph into lines (preserve single newlines)
+                    // Split paragraph into lines 
                     const rawLines = paragraph.split('\n').filter((l: string) => l.trim());
                     
                     for (const rawLine of rawLines) {
@@ -438,16 +427,13 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 
                 if (ocrTextElements.length > 0) {
                     extractedText = ocrTextElements;
-                    console.log(`✅ Created ${ocrTextElements.length} text elements from backend OCR across ${currentPage} page(s)`);
                 }
             }
 
-            console.log('🖼️ Step 5: Loading editable PDF for canvas rendering...');
-            // Load the new PDF without text
             const editableLoadingTask = pdfjs.getDocument(editablePdfUrl);
             const editablePdf = await editableLoadingTask.promise;
 
-            // Convert pages to images (now without text)
+            // Convert pages to images 
             const pageImages = await convertPagesToImages(editablePdf);
             setPageCanvases(pageImages);
 
@@ -485,11 +471,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             canvas.width = viewport.width;
             canvas.height = viewport.height;
 
-            // Fill with white background first
             context.fillStyle = 'white';
             context.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Render page (backend already removed text, so this is clean)
             await page.render({
                 canvasContext: context,
                 viewport: viewport,
@@ -504,10 +488,8 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 height: viewport.height,
             });
 
-            console.log(`✅ Page ${pageNum} converted to image`);
         }
 
-        console.log(`✅ Converted ${images.length} pages`);
         return images;
     };
 
@@ -613,7 +595,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const initializeFabricCanvases = (pages: PageCanvas[], texts: TextElement[]) => {
-        console.log('🎨 Initializing Fabric.js canvases...');
+    
 
         Object.values(fabricCanvases.current).forEach(canvas => {
             try {
@@ -628,7 +610,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const canvasEl = canvasRefs.current[page.pageNumber];
             if (!canvasEl) return;
 
-            // Create Fabric canvas
             const fabricCanvas = new fabric.Canvas(canvasEl, {
                 width: page.width * scale,
                 height: page.height * scale,
@@ -668,31 +649,24 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             fabricCanvases.current[page.pageNumber] = fabricCanvas;
         });
-
-        console.log('✅ Fabric.js canvases initialized');
     };
 
     const addTextToCanvas = (canvas: fabric.Canvas, textEl: TextElement) => {
-        // Calculate the actual text width to prevent unwanted line breaks
-        // Create a temporary canvas context to measure text
         const ctx = document.createElement('canvas').getContext('2d');
         if (ctx) {
             const fontStyle = `${textEl.isBold ? 'bold' : 'normal'} ${textEl.isItalic ? 'italic' : 'normal'} ${textEl.fontSize * scale}px ${textEl.fontFamily}`;
             ctx.font = fontStyle;
             const metrics = ctx.measureText(textEl.text);
             const measuredWidth = metrics.width;
-
-            // Calculate max width to keep text within page bounds
+           
             const pageWidth = canvas.width || 800;
             const leftMargin = textEl.x * scale;
-            const rightMargin = 40 * scale; // Right padding
+            const rightMargin = 40 * scale; 
             const maxAllowedWidth = pageWidth - leftMargin - rightMargin;
 
-            // Use measured width but cap it to page bounds
             const calculatedWidth = Math.min(measuredWidth * 1.1, maxAllowedWidth);
             var estimatedWidth = Math.max(calculatedWidth, Math.min(textEl.width * scale, maxAllowedWidth), 100 * scale);
         } else {
-            // Fallback if canvas context not available
             const pageWidth = canvas.width || 800;
             const leftMargin = textEl.x * scale;
             const maxAllowedWidth = pageWidth - leftMargin - 40 * scale;
@@ -725,7 +699,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             cornerSize: 8,
             transparentCorners: false,
 
-            // Text wrapping - enable word wrapping
+            // Text wrapping 
             splitByGrapheme: false,
             lineHeight: 1.2,
             charSpacing: 0,
@@ -764,13 +738,11 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const handleDoubleClick = (e: any, pageNumber: number) => {
-        // Don't add text if clicking on an existing object
         if (e.target) return;
 
         const canvas = fabricCanvases.current[pageNumber];
         if (!canvas) return;
 
-        // Get click position from the event
         const pointer = canvas.getPointer(e.e);
         
         addNewTextAtPosition(pageNumber, pointer.x, pointer.y);
@@ -1011,11 +983,8 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         setTextElements(elements);
     };
 
-    // Handle entity click - find and highlight only the specific entity text in the canvas
+    // Handle entity click
     const handleEntityClick = (entity: NlpEntity) => {
-        console.log('🔍 Searching for entity:', entity.text, 'type:', entity.type);
-        
-        // Search through all textboxes in all canvases to find the entity text
         let found = false;
         const config = ENTITY_TYPE_CONFIG[entity.type];
         const highlightColor = config?.color || '#2563EB';
@@ -1157,7 +1126,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         setError(null);
 
         try {
-            console.log('📄 Generating document...');
 
             const allTextElements = extractAllTextFromCanvases();
             const allImageElements = extractAllImagesFromCanvases();
@@ -1199,7 +1167,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 <div className="text-center">
                     <Loader2 className="h-12 w-12 animate-spin text-[rgb(132,42,59)] mx-auto mb-4" />
                     <p className="text-gray-600 font-medium">Loading PDF Editor...</p>
-                    <p className="text-sm text-gray-500 mt-2">Initializing Fabric.js canvas...</p>
+                    <p className="text-sm text-gray-500 mt-2">Initializing document...</p>
                 </div>
             </div>
         );

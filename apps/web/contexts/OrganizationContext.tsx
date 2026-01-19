@@ -22,8 +22,7 @@ const STORAGE_KEY = 'docu_organizations';
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const fetchedRef = useRef(false);
-  
-  // Initialize from localStorage
+ 
   const [organizations, setOrganizations] = useState<Organization[]>(() => {
     if (typeof window !== 'undefined') {
       const cached = localStorage.getItem(STORAGE_KEY);

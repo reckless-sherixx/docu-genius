@@ -26,14 +26,13 @@ export class PDFEditorController {
         });
       }
 
-      // Prepare PDF for editing (applies OCR if scanned)
+      // Prepare PDF for editing 
       const pdfData = await pdfEditorService.preparePDFForEditing(id);
 
-      // Use backend proxy URL instead of direct S3 (avoids CORS issues)
       const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
       const downloadUrl = `${backendUrl}/api/pdf-editor/${id}/download`;
 
-      // Check if this template has saved text elements (from previous edit session)
+      // Check if this template has saved text elements 
       let savedTextElements = null;
       if (template.extracted_text && template.extracted_text.endsWith('-elements.json')) {
         try {
@@ -97,8 +96,6 @@ export class PDFEditorController {
         });
       }
 
-      console.log(`📥 Proxying PDF download for template: ${id}`);
-
       // Download from S3
       const pdfBuffer = await s3Service.downloadFileAsBuffer(template.s3_key);
 
@@ -125,7 +122,6 @@ export class PDFEditorController {
 
   /**
    * Save edited PDF
-   * Creates new temporary file that expires in 2 hours
    */
   async saveEditedPDF(req: Request, res: Response): Promise<any> {
     try {
@@ -181,12 +177,6 @@ export class PDFEditorController {
       const { templateId, textElements, imageElements, deletedElements } = req.body;
       const userId = (req as any).userId;
 
-      console.log('📥 Received saveEditablePDF request:');
-      console.log('  - templateId:', templateId);
-      console.log('  - textElements count:', textElements?.length || 0);
-      console.log('  - imageElements count:', imageElements?.length || 0);
-      console.log('  - deletedElements count:', deletedElements?.length || 0);
-
       if (!templateId || !textElements) {
         return res.status(400).json({
           success: false,
@@ -231,7 +221,7 @@ export class PDFEditorController {
   }
 
   /**
-   * Prepare editable PDF: Create new PDF with blank pages (no text layer)
+   * Prepare editable PDF: Create new PDF with blank pages 
    */
   async prepareEditablePDF(req: Request, res: Response): Promise<any> {
     try {
@@ -362,7 +352,6 @@ export class PDFEditorController {
 
   /**
    * Save template as permanent 
-   * This makes the template visible in the templates list
    */
   async savePermanentTemplate(req: Request, res: Response): Promise<any> {
     try {
@@ -421,7 +410,6 @@ export class PDFEditorController {
 
   /**
    * Generate a document from a template
-   * Creates a final PDF and saves it to GeneratedDocument table
    */
   async generateDocument(req: Request, res: Response): Promise<any> {
     try {

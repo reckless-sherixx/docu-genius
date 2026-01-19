@@ -168,10 +168,8 @@ export class AuthService {
     // Verify email
     static async verifyEmail(token: string) {
         try {
-            // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { email: string };
 
-            // Find user with matching token
             const user = await prisma.user.findFirst({
                 where: {
                     email: decoded.email,

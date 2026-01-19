@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "./SidebarComponent";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { usePathname, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import {
   IconArrowLeft,
   IconSettings,
@@ -18,6 +18,7 @@ import { motion } from "motion/react";
 import CloudIcon from "@/public/CloudWhite.png";
 import DashboardContent from "./DashboardContent";
 import Image from "next/image";
+import { LogsIcon } from "lucide-react";
 
 export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname();
@@ -67,22 +68,15 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
       ),
     },
     {
-      label: "Team Leads",
-      href: "#",
+      label: "Creation Logs",
+      href: `/dashboard/${organizationId}/creation-logs`,
       icon: (
-        <IconUsers className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+        <LogsIcon className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
   ];
 
   const personaliseLinks = [
-    {
-      label: "Catalog",
-      href: "#",
-      icon: (
-        <IconBookmark className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
-      ),
-    },
     {
       label: "Profile",
       href: `/${userId}/profile`,
@@ -90,14 +84,11 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
         <IconSettings className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
-    {
-      label: "Logout",
-      href: "#",
-      icon: (
-        <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
-      ),
-    },
   ];
+
+  const handleLogout = () => {
+    signOut({ callbackUrl: "/login" });
+  };
 
   const [open, setOpen] = useState(false);
 
@@ -110,6 +101,7 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
             analyticsLinks={analyticsLinks}
             organizationLinks={organizationLinks}
             personaliseLinks={personaliseLinks}
+            onLogout={handleLogout}
           />
         </SidebarBody>
       </Sidebar>
@@ -125,11 +117,13 @@ const SidebarContent = ({
   analyticsLinks,
   organizationLinks,
   personaliseLinks,
+  onLogout,
 }: {
   mainLinks: any[];
   analyticsLinks: any[];
   organizationLinks: any[];
   personaliseLinks: any[];
+  onLogout: () => void;
 }) => {
   const { open, animate } = useSidebar();
 
@@ -158,7 +152,7 @@ const SidebarContent = ({
         ))}
       </div>
 
-      {/* Analytics Section */}
+      {/* Template Section */}
       <div className="mt-4 px-4 sm:mt-6">
         <motion.p
           animate={{
@@ -168,7 +162,7 @@ const SidebarContent = ({
           transition={{ duration: 0.2, ease: "easeInOut" }}
           className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3"
         >
-          ANALYTICS
+          Template Service
         </motion.p>
         <div className="flex flex-col ">
           {analyticsLinks.map((link, idx) => (
@@ -187,7 +181,7 @@ const SidebarContent = ({
           transition={{ duration: 0.2, ease: "easeInOut" }}
           className="text-xs font-semibold text-gray-500 uppercase mb-2 sm:mb-3"
         >
-          SUPPORT
+          Team
         </motion.p>
         <div className="flex flex-col">
           {organizationLinks.map((link, idx) => (
@@ -226,6 +220,22 @@ const SidebarContent = ({
           {personaliseLinks.map((link, idx) => (
             <SidebarLink key={idx} link={link} />
           ))}
+          {/* Logout Button */}
+          <button
+            onClick={onLogout}
+            className="flex items-center justify-start gap-2 group/sidebar py-1 w-full text-left"
+          >
+            <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+            <motion.span
+              animate={{
+                display: animate ? (open ? "inline-block" : "none") : "inline-block",
+                opacity: animate ? (open ? 1 : 0) : 1,
+              }}
+              className="text-neutral-700 dark:text-neutral-200 text-sm group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre inline-block !p-0 !m-0"
+            >
+              Logout
+            </motion.span>
+          </button>
         </div>
       </div>
     </div >

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useOrganizationId } from "@/hooks/use-organization-id";
 import { Loader2, Shield, User as UserIcon, Mail, Calendar, Crown, MoreVertical } from "lucide-react";
@@ -37,20 +37,28 @@ const getTimeAgo = (date: string) => {
 };
 
 export function MembersComponent() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const organizationId = useOrganizationId();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"ADMIN" | "CREATOR" | null>(null);
+  const hasFetched = useRef(false);
+
+  const token = session?.user?.token;
+  const userEmail = session?.user?.email;
 
   useEffect(() => {
     const fetchMembers = async () => {
-      if (!session?.user?.token || !organizationId) {
-        setLoading(false);
+      if (!token || !organizationId || status === "loading") {
+        if (status !== "loading") setLoading(false);
         return;
       }
+
+      // Prevent double fetch
+      if (hasFetched.current) return;
+      hasFetched.current = true;
 
       try {
         setLoading(true);
@@ -60,7 +68,7 @@ export function MembersComponent() {
           `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/v1/organization/${organizationId}/members`,
           {
             headers: {
-              'Authorization': `Bearer ${session.user.token}`,
+              'Authorization': `Bearer ${token}`,
             },
             cache: 'no-store',
           }
@@ -71,7 +79,7 @@ export function MembersComponent() {
           if (data.success && data.data) {
             setMembers(data.data);
             // Find current user in the members list
-            const currentMember = data.data.find((m: Member) => m.email === session.user?.email);
+            const currentMember = data.data.find((m: Member) => m.email === userEmail);
             if (currentMember) {
               setCurrentUserId(currentMember.user_id);
               setCurrentUserRole(currentMember.role);
@@ -90,7 +98,7 @@ export function MembersComponent() {
     };
 
     fetchMembers();
-  }, [session?.user?.token, session?.user?.email, organizationId]);
+  }, [token, userEmail, organizationId, status]);
 
   const handleRoleChange = async (memberId: string, newRole: "ADMIN" | "CREATOR") => {
     if (!session?.user?.token || !organizationId) return;
@@ -160,8 +168,47 @@ export function MembersComponent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[rgb(132,42,59)]" />
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header Skeleton */}
+        <div className="mb-8">
+          <div className="h-9 w-48 bg-gray-200 rounded-lg animate-pulse mb-2"></div>
+          <div className="h-5 w-64 bg-gray-100 rounded animate-pulse"></div>
+        </div>
+
+        {/* Members Grid Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm"
+            >
+              {/* Avatar and Name Skeleton */}
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-14 h-14 bg-gray-200 rounded-full animate-pulse"></div>
+                <div className="flex-1">
+                  <div className="h-5 w-32 bg-gray-200 rounded animate-pulse mb-2"></div>
+                  <div className="h-4 w-24 bg-gray-100 rounded animate-pulse"></div>
+                </div>
+                <div className="w-8 h-8 bg-gray-100 rounded-lg animate-pulse"></div>
+              </div>
+
+              {/* Email Skeleton */}
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-4 h-4 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-4 w-40 bg-gray-100 rounded animate-pulse"></div>
+              </div>
+
+              {/* Joined Date Skeleton */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-4 h-4 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-4 w-28 bg-gray-100 rounded animate-pulse"></div>
+              </div>
+
+              {/* Role Badge Skeleton */}
+              <div className="h-7 w-20 bg-gray-200 rounded-full animate-pulse"></div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

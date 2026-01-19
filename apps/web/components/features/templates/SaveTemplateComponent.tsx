@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useOrganizationId } from "@/hooks/use-organization-id";
@@ -29,20 +29,21 @@ interface Template {
 }
 
 export function SaveTemplateComponent() {
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
     const router = useRouter();
     const organizationId = useOrganizationId();
     const [templates, setTemplates] = useState<Template[]>([]);
-    const [loadingTemplates, setLoadingTemplates] = useState(false);
+    const [loadingTemplates, setLoadingTemplates] = useState(true);
     const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
+    const hasFetched = useRef(false);
 
-    // Get unique categories from templates
+    const token = session?.user?.token;
+
     const categories = ['All', ...Array.from(new Set(templates.map(t => t.category || 'General')))];
 
-    // Filter templates based on category and search
     const filteredTemplates = templates.filter(template => {
         const matchesCategory = selectedCategory === 'All' || template.category === selectedCategory;
         const matchesSearch = template.template_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -51,7 +52,14 @@ export function SaveTemplateComponent() {
     });
 
     const fetchTemplates = useCallback(async () => {
-        if (!session?.user?.token || !organizationId) return;
+        if (!token || !organizationId || status === "loading") {
+            if (status !== "loading") setLoadingTemplates(false);
+            return;
+        }
+
+        // Prevent double fetch
+        if (hasFetched.current) return;
+        hasFetched.current = true;
 
         try {
             setLoadingTemplates(true);
@@ -59,7 +67,7 @@ export function SaveTemplateComponent() {
                 `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/templates?organizationId=${organizationId}`,
                 {
                     headers: {
-                        'Authorization': `Bearer ${session.user.token}`
+                        'Authorization': `Bearer ${token}`
                     },
                     cache: 'no-store'
                 }
@@ -79,7 +87,7 @@ export function SaveTemplateComponent() {
         } finally {
             setLoadingTemplates(false);
         }
-    }, [session?.user?.token, organizationId]);
+    }, [token, organizationId, status]);
 
     const handleDeleteTemplate = async (templateId: string) => {
         if (!confirm('Are you sure you want to delete this template?')) return;
@@ -265,12 +273,10 @@ export function SaveTemplateComponent() {
                                 >
                                     {/* Template Preview */}
                                     <div className="aspect-[4/4] bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
-                                        {/* PDF Preview Placeholder with Document Icon */}
                                         <div className="absolute inset-0 flex items-center justify-center">
                                             <FileText className="h-24 w-24 text-gray-300" />
                                         </div>
 
-                                        {/* Hover Overlay with Actions */}
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
                                             <button
                                                 onClick={() => router.push(`/dashboard/${organizationId}/pdf-editor/${template.id}`)}

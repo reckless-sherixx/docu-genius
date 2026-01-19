@@ -34,7 +34,6 @@ export class GeneratedDocumentController {
         });
       }
 
-      // Fetch all generated documents for this organization
       const documents = await prisma.generatedDocument.findMany({
         where: {
           organization_id: organizationId,
@@ -126,8 +125,6 @@ export class GeneratedDocumentController {
       await prisma.generatedDocument.delete({
         where: { id },
       });
-
-      console.log(`✅ Generated document deleted: ${id}`);
 
       return res.status(200).json({
         success: true,

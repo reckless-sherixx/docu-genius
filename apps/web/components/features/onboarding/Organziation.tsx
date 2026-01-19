@@ -1,21 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { IconBuildingCommunity, IconKey, IconPlus } from "@tabler/icons-react";
+import { IconBuildingCommunity, IconKey, IconPlus, IconArrowLeft } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
+import { toast } from "sonner";
 
 export function OnboardingPage() {
     const router = useRouter();
     const { data: session, status } = useSession();
     const [activeTab, setActiveTab] = useState<"create" | "join">("create");
     const [loading, setLoading] = useState(false);
+    const [hasOrganizations, setHasOrganizations] = useState(false);
+    const [checkingOrgs, setCheckingOrgs] = useState(true);
 
     // Create organization states
     const [orgName, setOrgName] = useState("");
     const [orgDescription, setOrgDescription] = useState("");
 
     const [orgPin, setOrgPin] = useState("");
+
+    useEffect(() => {
+        const checkOrganizations = async () => {
+            if (status === "loading") {
+                return;
+            }
+
+            if (!session?.user?.token) {
+                setCheckingOrgs(false);
+                setHasOrganizations(false);
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/v1/organization`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${session.user.token}`,
+                        },
+                        cache: 'no-store',
+                    }
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    setHasOrganizations(data.success && data.data && data.data.length > 0);
+                } else {
+                    console.error('Failed to fetch organizations:', response.status);
+                    setHasOrganizations(false);
+                }
+            } catch (error) {
+                console.error("Error checking organizations:", error);
+                setHasOrganizations(false);
+            } finally {
+                setCheckingOrgs(false);
+            }
+        };
+
+        checkOrganizations();
+    }, [session, status]);
 
     const handleCreateOrganization = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -250,7 +294,7 @@ export function OnboardingPage() {
                             onClick={handleSkip}
                             className="text-gray-500 hover:text-[rgb(48,48,48)] text-sm font-medium transition-colors"
                         >
-                            I'll do this later
+                            Go to Dashboard 
                         </button>
                     </div>
                 </div>

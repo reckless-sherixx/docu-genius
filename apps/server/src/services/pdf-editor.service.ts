@@ -160,10 +160,9 @@ export class PDFEditorService {
                 
                 const { width: pdfWidth, height: pdfHeight } = originalPage.getSize();
                 
-                // Create blank page with same dimensions - NO text embedded
                 const newPage = newPdfDoc.addPage([pdfWidth, pdfHeight]);
                 
-                // Just log page creation - no text drawing
+    
                 console.log(`✅ Page ${i + 1} created as blank (${pdfWidth}x${pdfHeight})`);
                 
                 pageData.push({
@@ -173,11 +172,9 @@ export class PDFEditorService {
                 });
             }
             
-            // Save the new PDF to buffer (NOT to S3 yet - only when user explicitly saves)
             const pdfBytes = await newPdfDoc.save();
             const pdfBuffer = Buffer.from(pdfBytes);
             
-            // Return as base64 for frontend to render - no S3 upload until user saves
             const pdfBase64 = pdfBuffer.toString('base64');
             const editablePdfDataUrl = `data:application/pdf;base64,${pdfBase64}`;
             

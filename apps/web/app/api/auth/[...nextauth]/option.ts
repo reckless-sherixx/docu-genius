@@ -8,14 +8,24 @@ export const authOptions: AuthOptions = {
         signIn: '/login',
     },
     session: {
-        strategy: "jwt"
+        strategy: "jwt",
+        maxAge: 7 * 24 * 60 * 60, 
     },
     callbacks: {
         async signIn({ user, account, profile, email, credentials }) {
             return true
         },
         async redirect({ url, baseUrl }) {
-            return baseUrl
+            // If the url is just the base, redirect to dashboard
+            if (url === baseUrl || url === `${baseUrl}/`) {
+                return `${baseUrl}/dashboard`;
+            }
+            // If url starts with baseUrl, allow it
+            if (url.startsWith(baseUrl)) {
+                return url;
+            }
+            // Default to dashboard
+            return `${baseUrl}/dashboard`;
         },
         async session({ session, token }) {
             if (session.user) {

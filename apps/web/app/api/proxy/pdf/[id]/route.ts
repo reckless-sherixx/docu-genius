@@ -4,9 +4,10 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/option';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     
     if (!session?.user) {
@@ -17,7 +18,7 @@ export async function GET(
     const token = (session.user as any).token;
     
     // Fetch PDF from backend
-    const response = await fetch(`${backendUrl}/api/pdf-editor/${params.id}/download`, {
+    const response = await fetch(`${backendUrl}/api/pdf-editor/${id}/download`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
