@@ -10,6 +10,7 @@ import Link from "next/link";
 
 interface GeneratedDocument {
   id: string;
+  document_number?: string;
   generated_document_url: string;
   template_id: string;
   generated_by: string;
@@ -661,7 +662,7 @@ export default function DashboardContent() {
               {teamMembers.length > 0 && (
                 <Link
                   href={`/dashboard/${organizationId}/members`}
-                  className="mt-4 pt-4 border-t border-gray-700 block text-xs text-gray-400 hover:text-gray-200 transition-colors uppercase tracking-wide"
+                  className="mt-4 border-t border-gray-700 block text-xs text-gray-400 hover:text-gray-200 transition-colors uppercase tracking-wide"
                 >
                   SEE ALL COLLABORATORS &gt;
                 </Link>

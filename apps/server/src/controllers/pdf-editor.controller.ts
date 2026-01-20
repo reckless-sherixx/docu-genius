@@ -414,13 +414,39 @@ export class PDFEditorController {
    */
   async generateDocument(req: Request, res: Response): Promise<any> {
     try {
-      const { templateId, textElements, imageElements } = req.body;
+      const { templateId, textElements, imageElements, pin } = req.body;
       const userId = (req as any).userId;
 
       if (!templateId) {
         return res.status(400).json({
           success: false,
           message: 'Template ID is required',
+        });
+      }
+
+      if (!pin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Document generation PIN is required',
+        });
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true, document_generation_pin: true },
+      });
+
+      if (!user?.document_generation_pin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please set up your document generation PIN in your profile first',
+        });
+      }
+
+      if (user.document_generation_pin !== parseInt(pin)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid document generation PIN',
         });
       }
 
@@ -436,9 +462,6 @@ export class PDFEditorController {
         });
       }
 
-      console.log(`📄 Generating document from template: ${templateId}`);
-
-      // Save the edited PDF using the service that supports images
       const savedPdf = await pdfEditorService.saveEditablePDF(
         templateId,
         textElements || [],
@@ -447,22 +470,30 @@ export class PDFEditorController {
         imageElements || []
       );
 
-      // Get the S3 URL for the generated document
       const generatedDocUrl = savedPdf.downloadUrl;
 
-      // Create GeneratedDocument record
+      const lastDocument = await prisma.generatedDocument.findFirst({
+        orderBy: { created_at: 'desc' },
+        select: { document_number: true },
+      });
+
+      let nextNumber = 1;
+      if (lastDocument?.document_number) {
+        const match = lastDocument.document_number.match(/#DOC-(\d+)/);
+        if (match) {
+          nextNumber = parseInt(match[1]!) + 1;
+        }
+      }
+      const documentNumber = `#DOC-${String(nextNumber).padStart(4, '0')}`;
+
       const generatedDocument = await prisma.generatedDocument.create({
         data: {
+          document_number: documentNumber,
           generated_document_url: generatedDocUrl,
           template_id: templateId,
           generated_by: userId,
           organization_id: template.organization_id,
         },
-      });
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true, email: true },
       });
 
       if (template.organization_id) {
@@ -483,6 +514,7 @@ export class PDFEditorController {
         message: 'Document generated successfully',
         data: {
           documentId: generatedDocument.id,
+          documentNumber: generatedDocument.document_number,
           downloadUrl: generatedDocUrl,
           templateName: template.template_name,
         },

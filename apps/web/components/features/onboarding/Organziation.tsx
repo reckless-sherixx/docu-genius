@@ -65,7 +65,7 @@ export function OnboardingPage() {
         try {
             const token = session?.user?.token;
             if (!token) {
-                alert("Please login first");
+                toast.error("Please login first");
                 router.push("/login");
                 return;
             }
@@ -85,11 +85,11 @@ export function OnboardingPage() {
                 router.refresh();
                 router.push("/dashboard");
             } else {
-                alert(data.message || "Failed to create organization");
+                toast.error(data.message || "Failed to create organization");
             }
         } catch (error) {
             console.error("Error creating organization:", error);
-            alert("An error occurred. Please try again.");
+            toast.error("An error occurred. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -102,7 +102,7 @@ export function OnboardingPage() {
         try {
             const token = session?.user?.token;
             if (!token) {
-                alert("Please login first");
+                toast.error("Please login first");
                 router.push("/login");
                 return;
             }
@@ -122,11 +122,11 @@ export function OnboardingPage() {
                 router.refresh();
                 router.push("/dashboard");
             } else {
-                alert(data.message || "Failed to join organization");
+                toast.error(data.message || "Failed to join organization");
             }
         } catch (error) {
             console.error("Error joining organization:", error);
-            alert("An error occurred. Please try again.");
+            toast.error("An error occurred. Please try again.");
         } finally {
             setLoading(false);
         }

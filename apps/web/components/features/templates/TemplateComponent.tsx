@@ -173,7 +173,6 @@ export default function TemplateComponent() {
       console.log('✅ Upload successful!', result);
       setUploadResult(result);
       
-      // Reset form
       setShowUploadDialog(false);
       setSelectedFile(null);
       setTemplateName("");

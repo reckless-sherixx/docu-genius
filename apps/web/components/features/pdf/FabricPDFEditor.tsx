@@ -195,7 +195,10 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const signatureCanvasRef = useRef<SignatureCanvas>(null);
 
-    // History
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [pin, setPin] = useState('');
+    const [pinError, setPinError] = useState<string | null>(null);
+
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
@@ -1120,6 +1123,14 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
     };
 
     const generateDocument = async () => {
+        setPinError(null);
+        
+        if (!pin || pin.length !== 4) {
+            setPinError('Please enter your 4-digit PIN');
+            return;
+        }
+
+        setShowPinModal(false);
         setSaving(true);
         setError(null);
 
@@ -1138,25 +1149,34 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                     templateId,
                     textElements: allTextElements,
                     imageElements: allImageElements,
+                    pin: pin,
                 }),
             });
 
-            if (!response.ok) {
-                throw new Error('Failed to generate document');
-            }
-
             const result = await response.json();
 
+            if (!response.ok) {
+                throw new Error(result.message || 'Failed to generate document');
+            }
+
             if (result.success) {
-                toast.success('Document generated successfully!');
+                toast.success(`Document ${result.data.documentNumber} generated successfully!`);
+                setPin('');
                 router.push(`/dashboard/${organizationId}/generated-documents`);
             }
         } catch (err) {
             console.error('❌ Error generating document:', err);
             setError(err instanceof Error ? err.message : 'Failed to generate document');
+            toast.error(err instanceof Error ? err.message : 'Failed to generate document');
         } finally {
             setSaving(false);
         }
+    };
+
+    const handleGenerateClick = () => {
+        setPin('');
+        setPinError(null);
+        setShowPinModal(true);
     };
 
     if (loading) {
@@ -1545,7 +1565,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                         {/* Role-based action button */}
                         {userRole === "CREATOR" ? (
                             <button
-                                onClick={generateDocument}
+                                onClick={handleGenerateClick}
                                 disabled={saving}
                                 className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm rounded-lg shadow-md transition-all disabled:opacity-50 flex items-center gap-2 font-medium"
                             >
@@ -2034,6 +2054,69 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                                     Add Signature
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPinModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-[400px] max-w-[90vw]">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-green-600" />
+                                Enter Document Generation PIN
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    setShowPinModal(false);
+                                    setPin('');
+                                    setPinError(null);
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <p className="text-sm text-gray-600 mb-3">Enter your 4-digit document generation PIN to confirm</p>
+                            <input
+                                type="password"
+                                value={pin}
+                                onChange={(e) => {
+                                    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                    setPin(value);
+                                    setPinError(null);
+                                }}
+                                placeholder="Enter 4-digit PIN"
+                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:border-green-600 transition"
+                                maxLength={4}
+                                autoFocus
+                            />
+                            {pinError && (
+                                <p className="text-red-500 text-sm mt-2">{pinError}</p>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowPinModal(false);
+                                    setPin('');
+                                    setPinError(null);
+                                }}
+                                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-300 transition font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={generateDocument}
+                                disabled={pin.length !== 4 || saving}
+                                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {saving ? 'Generating...' : 'Generate Document'}
+                            </button>
                         </div>
                     </div>
                 </div>

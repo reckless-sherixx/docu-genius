@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useOrganizationId } from "@/hooks/use-organization-id";
+import { toast } from "sonner";
 import {
     FileText,
     Edit3,
@@ -57,7 +58,6 @@ export function SaveTemplateComponent() {
             return;
         }
 
-        // Prevent double fetch
         if (hasFetched.current) return;
         hasFetched.current = true;
 
@@ -90,8 +90,6 @@ export function SaveTemplateComponent() {
     }, [token, organizationId, status]);
 
     const handleDeleteTemplate = async (templateId: string) => {
-        if (!confirm('Are you sure you want to delete this template?')) return;
-
         try {
             setDeletingTemplateId(templateId);
             const response = await fetch(
@@ -106,12 +104,13 @@ export function SaveTemplateComponent() {
 
             if (response.ok) {
                 setTemplates(prev => prev.filter(t => t.id !== templateId));
+                toast.success('Template deleted successfully');
             } else {
-                alert('Failed to delete template');
+                toast.error('Failed to delete template');
             }
         } catch (error) {
             console.error('❌ Error deleting template:', error);
-            alert('Error deleting template');
+            toast.error('Error deleting template');
         } finally {
             setDeletingTemplateId(null);
         }
@@ -235,7 +234,7 @@ export function SaveTemplateComponent() {
                 <div className="px-8 py-6">
                     {loadingTemplates ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
-                            {[1, 2, 3, 4, 5, 6].map((i) => (
+                            {[1, 2, 3, 4, 5, 6 , 7, 8, 9 , 10].map((i) => (
                                 <div
                                     key={i}
                                     className="bg-white rounded-md border border-gray-200 overflow-hidden animate-pulse"

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pdfEditorController } from '../controllers/pdf-editor.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
+import { generateDocLimiter } from '../config/rateLimit.config.js';
 
 const router: Router = Router();
 
@@ -48,7 +49,7 @@ router.post('/save-permanent', authMiddleware, (req, res) =>
   pdfEditorController.savePermanentTemplate(req, res)
 );
 
-router.post('/generate-document', authMiddleware, (req, res) =>
+router.post('/generate-document', authMiddleware, generateDocLimiter, (req, res) =>
   pdfEditorController.generateDocument(req, res)
 );
 

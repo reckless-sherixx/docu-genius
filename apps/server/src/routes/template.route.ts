@@ -2,15 +2,16 @@ import { Router } from 'express';
 import { templateController } from '../controllers/template.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { upload, handleMulterError } from '../config/multer.config.js';
+import { uploadLimiter } from '../config/rateLimit.config.js';
 
 const router : Router = Router();
 
-router.post('/upload', authMiddleware, upload.single('file'), handleMulterError, (req: any, res: any) =>
+router.post('/upload', authMiddleware, uploadLimiter, upload.single('file'), handleMulterError, (req: any, res: any) =>
   templateController.directUpload(req, res)
 );
 
 
-router.post('/presigned-url', authMiddleware, (req, res) => 
+router.post('/presigned-url', authMiddleware, uploadLimiter, (req, res) => 
   templateController.generateUploadUrl(req, res)
 );
 

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 interface GeneratedDocument {
   id: string;
+  document_number?: string;
   generated_document_url: string;
   template_id: string;
   generated_by: string;
@@ -422,11 +423,12 @@ export function GeneratedDocumentsComponents() {
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
               {/* Table Header */}
               <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <div className="col-span-4">Document</div>
+                <div className="col-span-2">Doc ID</div>
+                <div className="col-span-3">Document</div>
                 <div className="col-span-2">Category</div>
                 <div className="col-span-2">Created By</div>
                 <div className="col-span-2">Date</div>
-                <div className="col-span-2 text-right">Actions</div>
+                <div className="col-span-1 text-right">Actions</div>
               </div>
 
               {/* Table Body */}
@@ -436,7 +438,12 @@ export function GeneratedDocumentsComponents() {
                     key={doc.id}
                     className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-gray-50 transition-colors"
                   >
-                    <div className="col-span-4 flex items-center gap-3">
+                    <div className="col-span-2">
+                      <span className="font-mono text-sm text-[rgb(132,42,59)] font-medium">
+                        {doc.document_number || "-"}
+                      </span>
+                    </div>
+                    <div className="col-span-3 flex items-center gap-3">
                       <span className="font-medium text-gray-900 truncate">
                         {doc.template?.template_name || "Untitled"}
                       </span>
@@ -452,7 +459,7 @@ export function GeneratedDocumentsComponents() {
                     <div className="col-span-2 text-sm text-gray-500">
                       {formatDate(doc.created_at)}
                     </div>
-                    <div className="col-span-2 flex items-center justify-end gap-2">
+                    <div className="col-span-1 flex items-center justify-end gap-2">
                       <button
                         onClick={() =>
                           handleDownload(

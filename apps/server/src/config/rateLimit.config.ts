@@ -16,3 +16,27 @@ export const authLimiter = rateLimit({
     ipv6Subnet: 56,
 })
 
+export const uploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    ipv6Subnet: 56,
+    message: {
+        success: false,
+        message: "Too many file uploads. Please try again after 15 minutes.",
+    },
+})
+
+export const generateDocLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    ipv6Subnet: 56,
+    message: {
+        success: false,
+        message: "Too many document generations. Please try again after 15 minutes.",
+    },
+})
+

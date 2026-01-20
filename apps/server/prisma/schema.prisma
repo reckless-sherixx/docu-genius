@@ -174,6 +174,7 @@ model TemplateField {
 
 model GeneratedDocument {
   id                     String @id @default(uuid())
+  document_number        String @unique
   generated_document_url String
   template_id            String
   generated_by           String
