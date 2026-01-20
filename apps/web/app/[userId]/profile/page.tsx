@@ -218,8 +218,81 @@ export default function ProfilePage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-[rgb(132,42,59)]" />
+            <div className="max-w-4xl mx-auto p-6 space-y-6">
+                {/* Header Skeleton */}
+                <div className="mb-8">
+                    <div className="h-8 w-24 bg-gray-100 rounded animate-pulse mb-4" />
+                    <div className="h-9 w-32 bg-gray-200 rounded-lg animate-pulse" />
+                    <div className="h-5 w-64 bg-gray-100 rounded animate-pulse mt-2" />
+                </div>
+
+                {/* Profile Card Skeleton */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    {/* Cover */}
+                    <div className="h-32 bg-gradient-to-r from-gray-200 to-gray-300 animate-pulse" />
+
+                    {/* Profile Info */}
+                    <div className="px-6 pb-6">
+                        <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-12">
+                            {/* Avatar Skeleton */}
+                            <div className="w-24 h-24 rounded-full bg-white p-1 shadow-lg">
+                                <div className="w-full h-full rounded-full bg-gray-200 animate-pulse" />
+                            </div>
+
+                            {/* Name & Email Skeleton */}
+                            <div className="flex-1 sm:mb-2">
+                                <div className="h-7 w-48 bg-gray-200 rounded animate-pulse" />
+                                <div className="h-5 w-56 bg-gray-100 rounded animate-pulse mt-2" />
+                            </div>
+                        </div>
+
+                        {/* Stats Skeleton */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-100">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="text-center">
+                                    <div className="h-8 w-12 bg-gray-200 rounded animate-pulse mx-auto" />
+                                    <div className="h-4 w-20 bg-gray-100 rounded animate-pulse mx-auto mt-2" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* PIN Section Skeleton */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse" />
+                            <div>
+                                <div className="h-5 w-48 bg-gray-200 rounded animate-pulse" />
+                                <div className="h-4 w-64 bg-gray-100 rounded animate-pulse mt-1" />
+                            </div>
+                        </div>
+                        <div className="h-9 w-24 bg-gray-200 rounded-lg animate-pulse" />
+                    </div>
+                </div>
+
+                {/* Organizations Section Skeleton */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse" />
+                        <div className="h-6 w-40 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                    <div className="space-y-3">
+                        {[1, 2].map((i) => (
+                            <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-gray-200 animate-pulse" />
+                                    <div>
+                                        <div className="h-5 w-32 bg-gray-200 rounded animate-pulse" />
+                                        <div className="h-4 w-24 bg-gray-100 rounded animate-pulse mt-1" />
+                                    </div>
+                                </div>
+                                <div className="h-6 w-16 bg-gray-200 rounded-full animate-pulse" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
         );
     }

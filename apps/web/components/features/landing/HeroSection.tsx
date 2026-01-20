@@ -46,9 +46,9 @@ export function HeroSection() {
                     <NavbarLogo />
                     <NavItems items={navItems} />
                     <div className="flex items-center gap-4">
-                        <NavbarButton variant="red">
-                            <Link href="/login">Get Started</Link>
-                        </NavbarButton>
+                        <Link href="/login">
+                            <NavbarButton as="div" variant="red">Get Started</NavbarButton>
+                        </Link>
                     </div>
                 </NavBody>
 
@@ -77,13 +77,16 @@ export function HeroSection() {
                             </a>
                         ))}
                         <div className="flex w-full flex-col gap-4">
-                            <NavbarButton
-                                onClick={() => setIsMobileMenuOpen(false)}
-                                variant="red"
-                                className="w-full"
-                            >
-                                <Link href="/login">Get Started</Link>
-                            </NavbarButton>
+                            <Link href="/login">
+                                <NavbarButton
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                    as="div"
+                                    variant="red"
+                                    className="w-full"
+                                >
+                                    Get Started
+                                </NavbarButton>
+                            </Link>
                         </div>
                     </MobileNavMenu>
                 </MobileNav>
@@ -117,12 +120,10 @@ export function HeroSection() {
                 {/* CTA Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4">
                     <Link href="/register">
-                        <NavbarButton variant="red">
-                            <Link href="/login">Get Started</Link>
-                        </NavbarButton>
+                        <NavbarButton as="div" variant="red">Get Started</NavbarButton>
                     </Link>
                     <Link href="/about">
-                        <NavbarButton variant="black">Learn More</NavbarButton>
+                        <NavbarButton as="div" variant="black">Learn More</NavbarButton>
                     </Link>
                 </div>
             </div>

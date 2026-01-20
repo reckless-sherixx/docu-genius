@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useOrganizationId } from "@/hooks/use-organization-id";
-import { 
-  FileText, 
-  Download, 
-  Trash2, 
-  Loader2, 
+import {
+  FileText,
+  Download,
+  Trash2,
+  Loader2,
   FolderOpen,
   Search,
-  X
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,22 +46,41 @@ export function GeneratedDocumentsComponents() {
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "name">("newest");
   const hasFetched = useRef(false);
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+  const backendUrl =
+    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
   const token = session?.user?.token;
 
-  const categories = ["All", ...Array.from(new Set(documents.map(d => d.template?.category || "General")))];
+  const categories = [
+    "All",
+    ...Array.from(
+      new Set(documents.map((d) => d.template?.category || "General")),
+    ),
+  ];
 
   const filteredDocuments = documents
-    .filter(doc => {
-      const matchesSearch = doc.template?.template_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    .filter((doc) => {
+      const matchesSearch =
+        doc.template?.template_name
+          ?.toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
         doc.user?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === "All" || doc.template?.category === selectedCategory;
+      const matchesCategory =
+        selectedCategory === "All" ||
+        doc.template?.category === selectedCategory;
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => {
-      if (sortBy === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      if (sortBy === "oldest") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      return (a.template?.template_name || "").localeCompare(b.template?.template_name || "");
+      if (sortBy === "newest")
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      if (sortBy === "oldest")
+        return (
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      return (a.template?.template_name || "").localeCompare(
+        b.template?.template_name || "",
+      );
     });
 
   useEffect(() => {
@@ -85,7 +104,7 @@ export function GeneratedDocumentsComponents() {
               Authorization: `Bearer ${token}`,
             },
             cache: "no-store",
-          }
+          },
         );
 
         if (response.ok) {
@@ -126,7 +145,7 @@ export function GeneratedDocumentsComponents() {
           headers: {
             Authorization: `Bearer ${session?.user?.token}`,
           },
-        }
+        },
       );
 
       if (response.ok) {
@@ -171,13 +190,70 @@ export function GeneratedDocumentsComponents() {
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-12 w-12 animate-spin text-[rgb(132,42,59)] mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">Loading documents...</p>
-            <p className="text-gray-400 text-sm mt-1">Please wait</p>
+        {/* Sidebar Skeleton */}
+        <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-6 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse" />
+              <div>
+                <div className="h-5 w-24 bg-gray-200 rounded animate-pulse" />
+                <div className="h-3 w-16 bg-gray-100 rounded animate-pulse mt-1" />
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* Categories Skeleton */}
+          <div className="p-4 flex-1">
+            <div className="h-3 w-20 bg-gray-200 rounded animate-pulse mb-3" />
+            <div className="space-y-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
+
+          {/* Sort Skeleton */}
+          <div className="p-4 border-t border-gray-100">
+            <div className="h-3 w-16 bg-gray-200 rounded animate-pulse mb-3" />
+            <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+          </div>
+        </aside>
+
+        {/* Main Content Skeleton */}
+        <main className="flex-1 p-6 overflow-auto">
+          {/* Search Bar Skeleton */}
+          <div className="mb-6">
+            <div className="h-12 w-full max-w-md bg-gray-200 rounded-xl animate-pulse" />
+          </div>
+
+          {/* Documents Grid Skeleton */}
+          <div className="grid gap-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4"
+              >
+                {/* Icon Skeleton */}
+                <div className="w-12 h-12 bg-gray-200 rounded-lg animate-pulse flex-shrink-0" />
+                
+                {/* Content Skeleton */}
+                <div className="flex-1 min-w-0">
+                  <div className="h-5 w-48 bg-gray-200 rounded animate-pulse" />
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="h-4 w-24 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-4 w-32 bg-gray-100 rounded animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Actions Skeleton */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-9 h-9 bg-gray-200 rounded-lg animate-pulse" />
+                  <div className="w-9 h-9 bg-gray-200 rounded-lg animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
@@ -190,7 +266,9 @@ export function GeneratedDocumentsComponents() {
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <X className="h-8 w-8 text-red-500" />
             </div>
-            <p className="font-semibold text-gray-800 text-lg">Error loading documents</p>
+            <p className="font-semibold text-gray-800 text-lg">
+              Error loading documents
+            </p>
             <p className="text-gray-500 text-sm mt-2">{error}</p>
           </div>
         </div>
@@ -205,7 +283,20 @@ export function GeneratedDocumentsComponents() {
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[rgb(132,42,59)]/10 rounded-xl">
-              <FileText className="h-6 w-6 text-[rgb(132,42,59)]" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                className="size-6"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+                />
+              </svg>
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900">Documents</h1>
@@ -216,12 +307,16 @@ export function GeneratedDocumentsComponents() {
 
         {/* Categories */}
         <div className="p-4 flex-1 overflow-y-auto">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Categories</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            Categories
+          </p>
           <div className="space-y-1">
             {categories.map((category) => {
-              const count = category === "All" 
-                ? documents.length 
-                : documents.filter(d => d.template?.category === category).length;
+              const count =
+                category === "All"
+                  ? documents.length
+                  : documents.filter((d) => d.template?.category === category)
+                      .length;
               return (
                 <button
                   key={category}
@@ -233,11 +328,13 @@ export function GeneratedDocumentsComponents() {
                   }`}
                 >
                   <span>{category}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    selectedCategory === category
-                      ? "bg-white/20 text-white"
-                      : "bg-gray-100 text-gray-500"
-                  }`}>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      selectedCategory === category
+                        ? "bg-white/20 text-white"
+                        : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
                     {count}
                   </span>
                 </button>
@@ -248,10 +345,14 @@ export function GeneratedDocumentsComponents() {
 
         {/* Sort Options */}
         <div className="p-4 border-t border-gray-100">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sort By</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            Sort By
+          </p>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as "newest" | "oldest" | "name")}
+            onChange={(e) =>
+              setSortBy(e.target.value as "newest" | "oldest" | "name")
+            }
             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
           >
             <option value="newest">Newest First</option>
@@ -289,7 +390,9 @@ export function GeneratedDocumentsComponents() {
 
           {/* Results info */}
           <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
-            <span>Showing {filteredDocuments.length} of {documents.length} documents</span>
+            <span>
+              Showing {filteredDocuments.length} of {documents.length} documents
+            </span>
             {selectedCategory !== "All" && (
               <span className="px-2 py-0.5 bg-[rgb(132,42,59)]/10 text-[rgb(132,42,59)] rounded-full text-xs font-medium">
                 {selectedCategory}
@@ -305,7 +408,9 @@ export function GeneratedDocumentsComponents() {
               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <FolderOpen className="h-10 w-10 text-gray-300" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-700">No documents found</h3>
+              <h3 className="text-lg font-semibold text-gray-700">
+                No documents found
+              </h3>
               <p className="text-sm mt-1 text-center max-w-sm">
                 {searchQuery || selectedCategory !== "All"
                   ? "Try adjusting your search or filter criteria"
@@ -349,7 +454,12 @@ export function GeneratedDocumentsComponents() {
                     </div>
                     <div className="col-span-2 flex items-center justify-end gap-2">
                       <button
-                        onClick={() => handleDownload(doc.generated_document_url, doc.template?.template_name)}
+                        onClick={() =>
+                          handleDownload(
+                            doc.generated_document_url,
+                            doc.template?.template_name,
+                          )
+                        }
                         className="p-2 text-gray-500 hover:text-[rgb(132,42,59)] hover:bg-[rgb(132,42,59)]/10 rounded-lg transition-all"
                         title="Download"
                       >

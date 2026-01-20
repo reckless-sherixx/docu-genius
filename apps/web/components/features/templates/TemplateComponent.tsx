@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, AlertCircle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Template {
   id: string;
@@ -38,6 +39,12 @@ export default function TemplateComponent() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Fix hydration error by ensuring client-only rendering
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const fetchTemplates = useCallback(async () => {
     if (!organizationId || !session?.user?.token) return;
@@ -93,12 +100,13 @@ export default function TemplateComponent() {
 
       if (response.ok) {
         setTemplates(prev => prev.filter(t => t.id !== templateId));
+        toast.success('Template deleted successfully');
       } else {
-        alert('Failed to delete template');
+        toast.error('Failed to delete template');
       }
     } catch (error) {
       console.error('❌ Error deleting template:', error);
-      alert('Error deleting template');
+      toast.error('Error deleting template');
     } finally {
       setDeletingTemplateId(null);
     }
@@ -135,22 +143,22 @@ export default function TemplateComponent() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert('Please select a file first');
+      toast.error('Please select a file first');
       return;
     }
 
     if (!session?.user?.token) {
-      alert('Please login first');
+      toast.error('Please login first');
       return;
     }
 
     if (!organizationId) {
-      alert('Please select an organization first');
+      toast.error('Please select an organization first');
       return;
     }
 
     if (!templateName.trim()) {
-      alert("Please provide a template name");
+      toast.error('Please provide a template name');
       return;
     }
 
@@ -172,18 +180,15 @@ export default function TemplateComponent() {
       setTemplateDescription("");
       setTemplateCategory("General");
       
-      // Show success message and redirect to PDF editor
-      const shouldEdit = window.confirm(
-        '✅ Upload successful!\n\nWould you like to edit this PDF now?'
-      );
+      toast.success('Upload successful! Redirecting to editor...');
       
-      if (shouldEdit && result.id && organizationId) {
-        // Redirect to PDF editor with organizationId
+      // Directly redirect to editor
+      if (result.id && organizationId) {
         router.push(`/dashboard/${organizationId}/pdf-editor/${result.id}`);
       }
     } catch (err) {
       console.error('❌ Upload failed:', err);
-      alert('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   };
 
@@ -222,7 +227,7 @@ export default function TemplateComponent() {
               Templates
             </h1>
             <p className="text-gray-500 text-xs">
-              {selectedOrganization ? (
+              {isMounted && selectedOrganization ? (
                 <span>Manage templates for <span className="font-semibold text-gray-700">{selectedOrganization.name}</span></span>
               ) : (
                 "Upload and manage your document templates"

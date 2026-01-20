@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useOrganizationId } from '@/hooks/use-organization-id';
 import * as fabric from 'fabric';
 import SignatureCanvas from 'react-signature-canvas';
+import { toast } from 'sonner';
 import {
     Type,
     Save,
@@ -1064,12 +1065,9 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         setError(null);
 
         try {
-            console.log('💾 Saving as permanent template...');
-
             const allTextElements = extractAllTextFromCanvases();
             const allImageElements = extractAllImagesFromCanvases();
 
-            // First save current edits
             const saveResponse = await fetch(`${backendUrl}/api/pdf-editor/save-editable`, {
                 method: 'POST',
                 headers: {
@@ -1110,7 +1108,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const permanentResult = await permanentResponse.json();
 
             if (permanentResult.success) {
-                alert('✅ Template saved permanently! It will appear in your templates list.');
+                toast.success('Template saved permanently! It will appear in your templates list.');
                 router.push(`/dashboard/${organizationId}/templates`);
             }
         } catch (err) {
@@ -1150,7 +1148,7 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
             const result = await response.json();
 
             if (result.success) {
-                alert('✅ Document generated successfully!');
+                toast.success('Document generated successfully!');
                 router.push(`/dashboard/${organizationId}/generated-documents`);
             }
         } catch (err) {

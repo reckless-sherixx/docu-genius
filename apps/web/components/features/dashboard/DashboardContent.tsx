@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Bell, FileText, Download, Wifi, WifiOff } from "lucide-react";
+import { Bell, FileText, Download, Wifi, WifiOff, ArrowRight } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { Badge } from "@workspace/ui/components/badge";
 import { useOrganizationId } from "@/hooks/use-organization-id";
 import { useSocket } from "@/hooks/useSocket";
 import Link from "next/link";
@@ -96,7 +97,6 @@ export default function DashboardContent() {
   const { data: session, status: sessionStatus } = useSession();
   const organizationId = useOrganizationId();
 
-  // Socket.io connection for real-time updates
   const {
     isConnected,
     onDocumentGenerated,
@@ -111,9 +111,15 @@ export default function DashboardContent() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
   const hasFetchedDocs = useRef(false);
   const hasFetchedMembers = useRef(false);
+
+  // Fix hydration error by ensuring client-only rendering
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const userName = session?.user?.name || "User";
   const userImage = session?.user?.image;
@@ -208,7 +214,6 @@ export default function DashboardContent() {
       };
       setNotifications((prev) => [newNotification, ...prev].slice(0, 10));
 
-      // Refetch documents to get the new one
       hasFetchedDocs.current = false;
       fetchDocuments();
     });
@@ -280,13 +285,13 @@ export default function DashboardContent() {
       {/* Top Header/Navbar */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4">
-          <div>
+          <div className="flex items-center gap-2">
             <h1 className="text-lg sm:text-xl font-semibold text-gray-900">
-              Hey {userName.split(" ")[0]} -
+              Hey {isMounted ? userName.split(" ")[0] : "User"} - 
             </h1>
-            <p className="text-gray-500 text-xs">
+            <span className="text-gray-500 text-sm mt-0.5">
               here's what's happening with your documents today
-            </p>
+            </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
             <div
@@ -359,7 +364,7 @@ export default function DashboardContent() {
                             className={`p-3 hover:bg-gray-50 cursor-pointer ${!notification.read ? "bg-blue-50" : ""}`}
                           >
                             <div className="flex items-start gap-2">
-                              <FileText className="h-4 w-4 text-[rgb(132,42,59)] mt-0.5 shrink-0" />
+                              <ArrowRight className="h-4 w-4 text-[rgb(132,42,59)] mt-0.5 shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-gray-900">
                                   {notification.message}
@@ -563,7 +568,7 @@ export default function DashboardContent() {
                               >
                                 ●{" "}
                                 <span className="hidden sm:inline ml-1">
-                                  Completed
+                                  Generated
                                 </span>
                               </span>
                             </td>
@@ -636,31 +641,29 @@ export default function DashboardContent() {
                           {member.email || ""}
                         </p>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <p
-                          className={`text-xs font-medium px-2 py-0.5 rounded ${
+                      <div className="flex-shrink-0">
+                        <Badge
+                          variant={member.role === "ADMIN" ? "default" : "secondary"}
+                          className={`text-xs font-medium ${
                             member.role === "ADMIN"
-                              ? "bg-[rgb(132,42,59)] text-white"
-                              : "bg-gray-600 text-gray-200"
+                              ? "bg-[rgb(132,42,59)] hover:bg-[rgb(112,32,49)] text-white"
+                              : "bg-gray-600 hover:bg-gray-700 text-gray-200"
                           }`}
                         >
                           {member.role}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {getTimeSince(member.joined_at)}
-                        </p>
+                        </Badge>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {teamMembers.length > 4 && (
+              {teamMembers.length > 0 && (
                 <Link
                   href={`/dashboard/${organizationId}/members`}
-                  className="w-full text-center text-xs text-gray-400 mt-3 sm:mt-4 hover:text-gray-200 block"
+                  className="mt-4 pt-4 border-t border-gray-700 block text-xs text-gray-400 hover:text-gray-200 transition-colors uppercase tracking-wide"
                 >
-                  SEE ALL {teamMembers.length} COLLABORATORS &gt;
+                  SEE ALL COLLABORATORS &gt;
                 </Link>
               )}
             </div>
