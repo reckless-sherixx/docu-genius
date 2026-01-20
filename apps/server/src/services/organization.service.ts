@@ -72,14 +72,12 @@ export class OrganizationService {
 
             return members.map((member) => ({
                 id: member.id,
-                user: {
-                    id: member.user.id,
-                    name: member.user.name,
-                    email: member.user.email,
-                    image: null, // Add image field if available in your schema
-                },
+                user_id: member.user.id,
+                name: member.user.name,
+                email: member.user.email,
                 role: member.role,
                 joined_at: member.joined_at,
+                user_created_at: member.user.created_at,
             }));
         } catch (error) {
             console.error('❌ Failed to fetch organization members:', error);
