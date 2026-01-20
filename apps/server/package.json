@@ -54,6 +54,7 @@
     "prisma": "^7.0.1",
     "react-pdf": "^10.2.0",
     "sharp": "^0.34.4",
+    "socket.io": "^4.8.3",
     "tesseract.js": "^6.0.1",
     "zod": "^3.25.76"
   }

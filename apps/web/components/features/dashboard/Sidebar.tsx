@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from "./SidebarComponent";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { usePathname, useRouter } from "next/navigation";
@@ -294,26 +294,28 @@ const OrganizationSelector = () => {
   const pathname = usePathname();
   const { organizations, loadingOrgs } = useOrganization();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Extract organizationId from URL
   const organizationId = pathname?.split('/')[2]; 
   const selectedOrganization = organizations.find(org => org.id === organizationId);
 
   const handleOrganizationChange = (orgId: string) => {
-    // Preserve the current route structure but change organization
     const pathParts = pathname?.split('/') || [];
     if (pathParts.length >= 3 && pathParts[1] === 'dashboard') {
-      // Replace organizationId in path
       pathParts[2] = orgId;
       router.push(pathParts.join('/'));
     } else {
-      // Default to dashboard home for that organization
       router.push(`/dashboard/${orgId}`);
     }
     setIsDropdownOpen(false);
   };
 
-  if (loadingOrgs) {
+  if (!mounted || loadingOrgs) {
     return (
       <div className="px-3 mb-6">
         <div className="flex items-center justify-center gap-2 py-3 text-sm text-gray-500">

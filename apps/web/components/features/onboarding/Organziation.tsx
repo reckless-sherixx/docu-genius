@@ -33,15 +33,12 @@ export function OnboardingPage() {
             }
 
             try {
-                const response = await fetch(
-                    `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/v1/organization`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${session.user.token}`,
-                        },
-                        cache: 'no-store',
-                    }
-                );
+                const response = await fetch("/api/organizations", {
+                    headers: {
+                        Authorization: `Bearer ${session.user.token}`,
+                    },
+                    cache: 'no-store',
+                });
 
                 if (response.ok) {
                     const data = await response.json();

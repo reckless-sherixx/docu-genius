@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { createOrganizationSchema } from "../schemas/organization.schema.js";
 import { OrganizationService } from "../services/organization.service.js";
+import { emitMemberJoined, emitMemberRoleUpdated, emitMemberRemoved } from "../config/websocket.config.js";
+import prisma from "../lib/prisma.js";
 
 
 export class OrganizationController {
@@ -94,6 +96,13 @@ export class OrganizationController {
 
             await OrganizationService.updateMemberRole(organizationId, memberId, role, userId);
 
+            const member = await prisma.user.findUnique({
+                where: { id: memberId },
+                select: { name: true },
+            });
+
+            emitMemberRoleUpdated(organizationId, memberId, role, member?.name || 'Unknown');
+
             return res.status(200).json({
                 success: true,
                 message: 'Member role updated successfully',
@@ -126,7 +135,16 @@ export class OrganizationController {
                 });
             }
 
+            // Get member info before removal for socket event
+            const member = await prisma.user.findUnique({
+                where: { id: memberId },
+                select: { name: true },
+            });
+            const memberName = member?.name || 'Unknown';
+
             await OrganizationService.removeMember(organizationId, memberId, userId);
+
+            emitMemberRemoved(organizationId, memberId, memberName);
 
             return res.status(200).json({
                 success: true,
@@ -198,6 +216,23 @@ export class OrganizationController {
                 userId, 
                 parseInt(pin)
             );
+
+            // Get user info and emit socket event
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { id: true, name: true, email: true },
+            });
+
+            if (user) {
+                emitMemberJoined({
+                    memberId: user.id,
+                    userName: user.name || 'Unknown',
+                    userEmail: user.email,
+                    organizationId: organization.id,
+                    role: 'CREATOR',
+                    joinedAt: new Date().toISOString(),
+                });
+            }
 
             res.status(200).json({
                 success: true,

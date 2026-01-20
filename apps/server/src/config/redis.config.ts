@@ -6,9 +6,3 @@ export const redisConnection: ConnectionOptions = {
   password: process.env.REDIS_PASSWORD || undefined,
   maxRetriesPerRequest: null,
 };
-
-console.log('✅ Redis connection configured:', {
-  host: redisConnection.host,
-  port: redisConnection.port,
-  hasPassword: !!redisConnection.password,
-});

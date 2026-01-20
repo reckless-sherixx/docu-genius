@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { pdfEditorService } from '../services/pdf-editor.service.js';
 import { s3Service } from '../services/s3.service.js';
+import { emitDocumentGenerated } from '../config/websocket.config.js';
 
 export class PDFEditorController {
   async openForEditing(req: Request, res: Response): Promise<any> {
@@ -459,7 +460,23 @@ export class PDFEditorController {
         },
       });
 
-      console.log(`✅ Document generated successfully: ${generatedDocument.id}`);
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      });
+
+      if (template.organization_id) {
+        emitDocumentGenerated({
+          documentId: generatedDocument.id,
+          templateName: template.template_name,
+          userName: user?.name || 'Unknown User',
+          userEmail: user?.email || '',
+          organizationId: template.organization_id,
+          createdAt: generatedDocument.created_at.toISOString(),
+        });
+      }
+
+      console.log(`Document generated successfully: ${generatedDocument.id}`);
 
       return res.status(200).json({
         success: true,

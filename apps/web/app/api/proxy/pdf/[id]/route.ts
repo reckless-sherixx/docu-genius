@@ -31,10 +31,8 @@ export async function GET(
       );
     }
 
-    // Get PDF buffer
     const buffer = await response.arrayBuffer();
 
-    // Return PDF with proper headers
     return new NextResponse(buffer, {
       status: 200,
       headers: {
