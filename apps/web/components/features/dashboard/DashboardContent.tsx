@@ -295,28 +295,6 @@ export default function DashboardContent() {
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
-            <div
-              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                isConnected
-                  ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-500"
-              }`}
-              title={
-                isConnected
-                  ? "Connected - Real-time updates active"
-                  : "Connecting..."
-              }
-            >
-              {isConnected ? (
-                <Wifi className="h-3 w-3" />
-              ) : (
-                <WifiOff className="h-3 w-3" />
-              )}
-              <span className="hidden sm:inline">
-                {isConnected ? "Live" : "Offline"}
-              </span>
-            </div>
-
             {/* Notifications Button */}
             <div className="relative">
               <button
