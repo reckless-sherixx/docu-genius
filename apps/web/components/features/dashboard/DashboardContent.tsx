@@ -117,7 +117,6 @@ export default function DashboardContent() {
   const hasFetchedDocs = useRef(false);
   const hasFetchedMembers = useRef(false);
 
-  // Fix hydration error by ensuring client-only rendering
   useEffect(() => {
     setIsMounted(true);
   }, []);

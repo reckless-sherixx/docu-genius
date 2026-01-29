@@ -597,14 +597,10 @@ export class PDFEditorService {
         textElements: any[],
         deletedElements: any[],
         organizationId: string,
-        imageElements: any[] = []
+        imageElements: any[] = [],
+        documentNumber?: string
     ): Promise<any> {
         try {
-            console.log('🔧 saveEditablePDF called with:');
-            console.log('  - textElements:', textElements.length);
-            console.log('  - imageElements:', imageElements.length);
-            console.log('  - deletedElements:', deletedElements.length);
-
             // Get original template
             const originalTemplate = await prisma.template.findUnique({
                 where: { id: templateId },
@@ -622,10 +618,10 @@ export class PDFEditorService {
                 originalBuffer,
                 textElements,
                 deletedElements,
-                imageElements
+                imageElements,
+                documentNumber
             );
 
-            // Upload to S3 with unique key
             const timestamp = Date.now();
             const fileName = `Edited - ${originalTemplate.template_name}`;
             const s3Key = `templates/${organizationId}/edited-${timestamp}.pdf`;
@@ -634,7 +630,6 @@ export class PDFEditorService {
             // Upload PDF buffer to S3
             await s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf');
 
-            // Also save text and image elements JSON to S3 
             const elementsJson = JSON.stringify({
                 textElements,
                 imageElements,
@@ -642,9 +637,7 @@ export class PDFEditorService {
                 savedAt: new Date().toISOString(),
             });
             await s3Service.uploadFile(textElementsS3Key, Buffer.from(elementsJson), 'application/json');
-            console.log('💾 Saved elements JSON to S3:', textElementsS3Key);
 
-            // Save to database with expiration (2 hours)
             const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
             const editedTemplate = await prisma.template.create({
@@ -700,7 +693,6 @@ export class PDFEditorService {
                 // Create new blank page
                 const newPage = newPdfDoc.addPage([width, height]);
 
-                // Embed the original page (includes images, graphics, AND original text)
                 const embeddedPage = await newPdfDoc.embedPage(originalPage);
                 newPage.drawPage(embeddedPage, {
                     x: 0,
@@ -717,8 +709,6 @@ export class PDFEditorService {
                     );
                     return !isDeleted;
                 });
-
-                console.log(`📄 Page ${pageNum}: ${activeElements.length}/${pageElements.length} active elements`);
 
                 for (const element of activeElements) {
                     const padding = 4; 
@@ -781,7 +771,8 @@ export class PDFEditorService {
         originalBuffer: Buffer,
         textElements: any[],
         deletedElements: any[],
-        imageElements: any[]
+        imageElements: any[],
+        documentNumber?: string
     ): Promise<Buffer> {
         try {
             // Load original PDF
@@ -790,6 +781,9 @@ export class PDFEditorService {
             
             // Create new PDF document
             const newPdfDoc = await PDFDocument.create();
+
+            // Embed font for document number
+            const helveticaFont = await newPdfDoc.embedFont(StandardFonts.Helvetica);
 
             // Process each page
             for (let pageNum = 1; pageNum <= originalPages.length; pageNum++) {
@@ -819,9 +813,6 @@ export class PDFEditorService {
                     return !isDeleted;
                 });
 
-                console.log(`📄 Page ${pageNum}: ${activeTextElements.length} text elements, ${imageElements.filter(img => img.page === pageNum).length} images`);
-
-                // Draw white rectangles to cover original text that will be replaced
                 for (const element of activeTextElements) {
                     const padding = 4; 
                     const rectX = Math.max(0, (element.x / 2) - padding);
@@ -873,6 +864,21 @@ export class PDFEditorService {
                 for (const imageEl of pageImages) {
                     await this.addImageElement(newPdfDoc, newPage, imageEl, height);
                 }
+
+                // Add document number on first page (top-right corner)
+                if (pageNum === 1 && documentNumber) {
+                    const fontSize = 10;
+                    const textWidth = helveticaFont.widthOfTextAtSize(documentNumber, fontSize);
+                    const padding = 15;
+                    
+                    newPage.drawText(documentNumber, {
+                        x: width - textWidth - padding,
+                        y: height - padding - fontSize,
+                        size: fontSize,
+                        font: helveticaFont,
+                        color: rgb(0.4, 0.4, 0.4),
+                    });
+                }
             }
 
             // Save the new PDF
@@ -923,8 +929,6 @@ export class PDFEditorService {
                 embeddedImage = await pdfDoc.embedJpg(imageBuffer);
             }
 
-            // Calculate position (PDF coordinates are from bottom-left)
-            // Divide by 2 because canvas renders at 2x scale (consistent with text elements)
             const imgX = x / 2;
             const imgWidth = width / 2;
             const imgHeight = height / 2;
@@ -938,25 +942,21 @@ export class PDFEditorService {
                 height: imgHeight,
             });
 
-            console.log(`✅ Added ${element.type || 'image'} at (${imgX}, ${imgY}) size ${imgWidth}x${imgHeight}`);
+            console.log(`Added ${element.type || 'image'} at (${imgX}, ${imgY}) size ${imgWidth}x${imgHeight}`);
         } catch (error) {
-            console.error('❌ Error adding image element:', error);
-            // Don't throw - continue with other elements
+            console.error('Error adding image element:', error);
         }
     }
 
 
     private async addTextElement(pdfDoc: PDFDocument, page: PDFPage, element: any): Promise<void> {
         try {
-            console.log(`📝 Adding text: "${element.text}" with font: ${element.fontFamily}, bold: ${element.isBold}, italic: ${element.isItalic}`);
-            
-            // Enhanced font selection based on formatting
             let font: any;
             const fontFamily = element.fontFamily?.toLowerCase() || 'arial';
             const isBold = element.isBold === true;
             const isItalic = element.isItalic === true;
-
-            // Map font families to StandardFonts with bold/italic support
+            
+           
             if (fontFamily.includes('times')) {
                 if (isBold && isItalic) {
                     font = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
@@ -990,7 +990,6 @@ export class PDFEditorService {
                 }
             }
             
-            // Frontend extracts at scale 2, so we need to divide by 2
             const fontSize = element.fontSize / 2;
             const color = this.hexToRgb(element.color || '#000000');
 
@@ -1029,9 +1028,9 @@ export class PDFEditorService {
                 });
             }
 
-            console.log(`✅ Text added successfully at (${adjustedX.toFixed(2)}, ${y.toFixed(2)})`);
+            console.log(`Text added successfully at (${adjustedX.toFixed(2)}, ${y.toFixed(2)})`);
         } catch (error) {
-            console.error('❌ Error adding text to new PDF:', error);
+            console.error('Error adding text to new PDF:', error);
         }
     }
 
@@ -1042,14 +1041,11 @@ export class PDFEditorService {
         originalBuffer: Buffer,
         editedContent: any
     ): Promise<Buffer> {
-        console.log('🎨 Generating edited PDF with pdf-lib...');
-
         try {
             // Load original PDF
             const pdfDoc = await PDFDocument.load(originalBuffer);
             const pages = pdfDoc.getPages();
 
-            // Apply edits if provided
             if (editedContent?.edits && Array.isArray(editedContent.edits)) {
                 for (const edit of editedContent.edits) {
                     await this.applyEdit(pdfDoc, pages, edit);
@@ -1060,7 +1056,7 @@ export class PDFEditorService {
             const pdfBytes = await pdfDoc.save();
             return Buffer.from(pdfBytes);
         } catch (error) {
-            console.error('❌ Error generating PDF:', error);
+            console.error('Error generating PDF:', error);
             throw error;
         }
     }
@@ -1071,7 +1067,7 @@ export class PDFEditorService {
     private async applyEdit(pdfDoc: PDFDocument, pages: PDFPage[], edit: any): Promise<void> {
         const page = pages[edit.page - 1];
         if (!page) {
-            console.warn(`⚠️ Page ${edit.page} not found, skipping edit`);
+            console.warn(`Page ${edit.page} not found, skipping edit`);
             return;
         }
 
@@ -1092,7 +1088,7 @@ export class PDFEditorService {
                 await this.addShapeToPage(page, edit);
                 break;
             default:
-                console.warn(`⚠️ Unknown edit type: ${edit.type}`);
+                console.warn(`Unknown edit type: ${edit.type}`);
         }
     }
 
@@ -1117,7 +1113,7 @@ export class PDFEditorService {
      * Add image to PDF page
      */
     private async addImageToPage(pdfDoc: PDFDocument, page: PDFPage, edit: any): Promise<void> {
-        console.log('📷 Adding image to page:', edit.position);
+        console.log(' Adding image to page:', edit.position);
     }
 
     /**
@@ -1128,7 +1124,7 @@ export class PDFEditorService {
         page: PDFPage,
         edit: any
     ): Promise<void> {
-        console.log('✍️ Adding signature to page:', edit.position);
+        console.log(' Adding signature to page:', edit.position);
     }
 
     /**K

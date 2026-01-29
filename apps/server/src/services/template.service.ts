@@ -19,7 +19,6 @@ export class TemplateService {
         }
     ) {
         try {
-            // Generate unique key for S3
             const fileKey = S3Service.generateFileKey(
                 userId,
                 organizationId,
@@ -27,7 +26,6 @@ export class TemplateService {
                 'templates'
             );
 
-            // Upload to S3
             const uploadResult = await S3Service.uploadFile(
                 file.buffer,
                 fileKey,
@@ -71,11 +69,10 @@ export class TemplateService {
 
     static async getTemplates(organizationId: string) {
         try {
-            // Only return permanent (saved) templates, not temporary ones
             const templates = await prisma.template.findMany({
                 where: {
                     organization_id: organizationId,
-                    is_temporary: false, // Only permanent templates
+                    is_temporary: false, 
                 },
                 orderBy: {
                     created_at: 'desc',

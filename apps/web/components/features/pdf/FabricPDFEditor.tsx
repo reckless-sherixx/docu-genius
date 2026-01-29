@@ -1822,7 +1822,6 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
 
             {/* Canvas Area */}
             <div className="flex flex-1 overflow-hidden">
-                {/* Center - PDF Canvas */}
                 <div className="flex-1 overflow-auto bg-gray-100 p-8 relative">
                     <div className="max-w-5xl mx-auto space-y-8">
                         {pageCanvases.map((page) => (

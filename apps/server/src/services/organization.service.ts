@@ -35,7 +35,6 @@ export class OrganizationService {
 
     static async getOrganizationMembers(organizationId: string, userId: string) {
         try {
-            // First verify that the requesting user is a member of this organization
             const userMembership = await prisma.organizationMember.findUnique({
                 where: {
                     organization_id_user_id: {

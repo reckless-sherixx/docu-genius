@@ -392,8 +392,6 @@ export class PDFEditorController {
         file_size: updatedTemplate.file_size ? updatedTemplate.file_size.toString() : null,
       };
 
-      console.log(`✅ Template saved permanently: ${templateId}`);
-
       return res.status(200).json({
         success: true,
         message: 'Template saved permanently',
@@ -462,16 +460,6 @@ export class PDFEditorController {
         });
       }
 
-      const savedPdf = await pdfEditorService.saveEditablePDF(
-        templateId,
-        textElements || [],
-        [],
-        template.organization_id || '',
-        imageElements || []
-      );
-
-      const generatedDocUrl = savedPdf.downloadUrl;
-
       const lastDocument = await prisma.generatedDocument.findFirst({
         orderBy: { created_at: 'desc' },
         select: { document_number: true },
@@ -485,6 +473,17 @@ export class PDFEditorController {
         }
       }
       const documentNumber = `#DOC-${String(nextNumber).padStart(4, '0')}`;
+
+      const savedPdf = await pdfEditorService.saveEditablePDF(
+        templateId,
+        textElements || [],
+        [],
+        template.organization_id || '',
+        imageElements || [],
+        documentNumber
+      );
+
+      const generatedDocUrl = savedPdf.downloadUrl;
 
       const generatedDocument = await prisma.generatedDocument.create({
         data: {

@@ -18,12 +18,10 @@ export class S3Service {
       const uniqueFileName = `${crypto.randomUUID()}.${fileExtension}`;
       const key = `templates/${organizationId}/${uniqueFileName}`;
 
-      // Create PutObject command
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         ContentType: fileType,
-        // Add metadata
         Metadata: {
           originalName: fileName,
           organizationId: organizationId,
@@ -31,8 +29,8 @@ export class S3Service {
         },
       });
 
-      // Generate pre-signed URL (expires in 15 minutes)
-      const expiresIn = 900; // 15 minutes
+      // Generate pre-signed URL
+      const expiresIn = 900; 
       const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
       console.log('✅ Pre-signed upload URL generated:', { key, expiresIn });
@@ -43,7 +41,7 @@ export class S3Service {
         expiresIn,
       };
     } catch (error) {
-      console.error('❌ Error generating pre-signed URL:', error);
+      console.error('Error generating pre-signed URL:', error);
       throw new Error('Failed to generate upload URL');
     }
   }
@@ -60,11 +58,11 @@ export class S3Service {
 
       const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
-      console.log('✅ Pre-signed download URL generated:', { key });
+      console.log('Pre-signed download URL generated:', { key });
 
       return downloadUrl;
     } catch (error) {
-      console.error('❌ Error generating pre-signed download URL:', error);
+      console.error(' Error generating pre-signed download URL:', error);
       throw new Error('Failed to generate download URL');
     }
   }
@@ -81,9 +79,9 @@ export class S3Service {
 
       await this.s3Client.send(command);
 
-      console.log('✅ File deleted from S3:', key);
+      console.log('File deleted from S3:', key);
     } catch (error) {
-      console.error('❌ Error deleting file from S3:', error);
+      console.error('Error deleting file from S3:', error);
       throw new Error('Failed to delete file');
     }
   }
@@ -107,13 +105,13 @@ export class S3Service {
         metadata: response.Metadata,
       };
     } catch (error) {
-      console.error('❌ Error getting file metadata:', error);
+      console.error('Error getting file metadata:', error);
       throw new Error('Failed to get file metadata');
     }
   }
 
   /**
-   * Download file from S3 as buffer (for processing)
+   * Download file from S3 as buffer 
    */
   async downloadFileAsBuffer(key: string): Promise<Buffer> {
     try {
@@ -124,19 +122,18 @@ export class S3Service {
 
       const response = await this.s3Client.send(command);
       const stream = response.Body as any;
-
-      // Convert stream to buffer
+      
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {
         chunks.push(chunk);
       }
 
       const buffer = Buffer.concat(chunks);
-      console.log('✅ File downloaded from S3:', { key, size: buffer.length });
+      console.log('File downloaded from S3:', { key, size: buffer.length });
 
       return buffer;
     } catch (error) {
-      console.error('❌ Error downloading file from S3:', error);
+      console.error('Error downloading file from S3:', error);
       throw new Error('Failed to download file');
     }
   }
@@ -155,9 +152,9 @@ export class S3Service {
 
       await this.s3Client.send(command);
 
-      console.log('✅ File uploaded to S3:', { key, size: buffer.length });
+      console.log('File uploaded to S3:', { key, size: buffer.length });
     } catch (error) {
-      console.error('❌ Error uploading file to S3:', error);
+      console.error('Error uploading file to S3:', error);
       throw new Error('Failed to upload file');
     }
   }
