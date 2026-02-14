@@ -32,6 +32,16 @@ enum TemplateStatus {
   FAILED
 }
 
+enum TemplateCategory {
+  GENERAL
+  LEGAL
+  FINANCE
+  HR
+  MARKETING
+  SALES
+  OTHER
+}
+
 enum TemplateType {
   TEXT_PDF
   SCANNED_PDF
@@ -116,7 +126,7 @@ model Template {
   id                   String         @id @default(uuid())
   template_name        String         @db.VarChar(191)
   template_description String?
-  category             String?        @default("General")
+  category             TemplateCategory @default(GENERAL)
   s3_key               String?
   s3_url               String?
   file_size            BigInt?
@@ -146,7 +156,6 @@ model Template {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  // Relations
   fields             TemplateField[]
   generatedDocuments GeneratedDocument[]
 
