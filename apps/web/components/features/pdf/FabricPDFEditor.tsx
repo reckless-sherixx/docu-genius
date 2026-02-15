@@ -268,7 +268,14 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
                 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
             }
 
-            const loadingTask = pdfjs.getDocument(pdfUrl);
+
+            const pdfResponse = await fetch(pdfUrl, { credentials: 'include' });
+            if (!pdfResponse.ok) {
+                throw new Error(`Failed to load PDF (${pdfResponse.status})`);
+            }
+            const pdfArrayBuffer = await pdfResponse.arrayBuffer();
+
+            const loadingTask = pdfjs.getDocument({ data: pdfArrayBuffer });
             const pdf = await loadingTask.promise;
 
             const pdfDataResponse = await fetch(`${backendUrl}/api/pdf-editor/${templateId}/open`, {

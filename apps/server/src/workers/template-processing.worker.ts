@@ -39,7 +39,7 @@ class TemplateProcessor {
 
       if (!existingTemplate) {
         console.warn(`⚠️ Template ${templateId} not found in database. Skipping processing (may have been deleted).`);
-        return; // Exit gracefully without error
+        return; 
       }
 
       // Update status to PROCESSING
@@ -51,15 +51,12 @@ class TemplateProcessor {
         },
       });
 
-      // Download file from S3
       console.log(`📥 Downloading file from S3: ${s3Key}`);
       const fileBuffer = await s3Service.downloadFileAsBuffer(s3Key);
 
-      // Determine template type
       const templateType = this.determineTemplateType(mimeType, fileBuffer);
       console.log(`📄 Template type detected: ${templateType}`);
 
-      // Extract text based on template type
       let extractedText = '';
       let totalPages = 1;
 
@@ -186,15 +183,12 @@ class TemplateProcessor {
     console.log('🖼️ Processing scanned PDF with OCR');
 
     try {
-      // First, try to extract any existing text
       const pdfParse = require('pdf-parse');
       const pdfData = await pdfParse(buffer);
       const pages = pdfData.numpages;
       
       // If there's minimal text, it's likely scanned - apply OCR
       if (pdfData.text.trim().length < 100) {
-        console.log('🔍 Minimal text found, applying OCR...');
-        
         // Convert PDF to images and run OCR
         const ocrText = await this.performOCROnPDF(buffer, pages);
         
@@ -217,7 +211,6 @@ class TemplateProcessor {
 
   /**
    * Convert PDF pages to image buffers using pdf-to-img
-   * This is a pure JavaScript solution that works in any environment (no native binaries)
    */
   private async convertPDFToImages(pdfBuffer: Buffer, scale: number = 2): Promise<Buffer[]> {
     const images: Buffer[] = [];
@@ -232,7 +225,6 @@ class TemplateProcessor {
 
   /**
    * Perform OCR on a PDF by converting pages to images first
-   * Uses pdf-to-img (pure JS, works in any environment - no native binaries)
    */
   private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
     console.log(`🔤 Running OCR on PDF pages...`);

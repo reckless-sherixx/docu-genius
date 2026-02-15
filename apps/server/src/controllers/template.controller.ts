@@ -43,14 +43,14 @@ export class TemplateController {
                 data: {
                     template_name: file.originalname,
                     template_description: description || null,
-                    category: category || 'General',
+                    category: category || 'GENERAL',
                     s3_key: s3Key,
                     file_size: BigInt(file.size),
                     mime_type: file.mimetype,
                     status: 'PROCESSING',
                     uploaded_by: userId,
                     organization_id: organizationId,
-                    is_temporary: true, // Start as temporary until user saves permanently
+                    is_temporary: true,
                 },
             });
 
@@ -152,7 +152,7 @@ export class TemplateController {
                 data: {
                     template_name: name,
                     template_description: description || null,
-                    category: category || 'General',
+                    category: category || 'GENERAL',
                     s3_key: key,
                     file_size: fileSize ? BigInt(fileSize) : null,
                     mime_type: fileType,

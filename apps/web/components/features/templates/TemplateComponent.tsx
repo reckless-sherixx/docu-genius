@@ -33,15 +33,13 @@ export default function TemplateComponent() {
   const [isDragging, setIsDragging] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
-  const [templateCategory, setTemplateCategory] = useState("General");
+  const [templateCategory, setTemplateCategory] = useState("GENERAL");
   
-  // Template list state
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
-  // Fix hydration error by ensuring client-only rendering
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -76,7 +74,7 @@ export default function TemplateComponent() {
     }
   }, [organizationId, session?.user?.token]);
 
-  // Fetch templates when organization changes
+
   useEffect(() => {
     if (organizationId) {
       fetchTemplates();
@@ -177,11 +175,10 @@ export default function TemplateComponent() {
       setSelectedFile(null);
       setTemplateName("");
       setTemplateDescription("");
-      setTemplateCategory("General");
+      setTemplateCategory("GENERAL");
       
       toast.success('Upload successful! Redirecting to editor...');
       
-      // Directly redirect to editor
       if (result.id && organizationId) {
         router.push(`/dashboard/${organizationId}/pdf-editor/${result.id}`);
       }
@@ -196,7 +193,7 @@ export default function TemplateComponent() {
     setSelectedFile(null);
     setTemplateName("");
     setTemplateDescription("");
-    setTemplateCategory("General");
+    setTemplateCategory("GENERAL");
     clearError();
   };
 
@@ -376,13 +373,13 @@ export default function TemplateComponent() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
                   disabled={isUploading}
                 >
-                  <option value="General">General</option>
-                  <option value="Finance">Finance</option>
-                  <option value="Legal">Legal</option>
+                  <option value="GENERAL">General</option>
+                  <option value="LEGAL">Legal</option>
+                  <option value="FINANCE">Finance</option>
                   <option value="HR">HR</option>
-                  <option value="Marketing">Marketing</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Operations">Operations</option>
+                  <option value="MARKETING">Marketing</option>
+                  <option value="SALES">Sales</option>
+                  <option value="OTHER">Other</option>
                 </select>
               </div>
 
