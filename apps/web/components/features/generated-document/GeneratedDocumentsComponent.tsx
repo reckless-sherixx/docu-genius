@@ -51,12 +51,17 @@ export function GeneratedDocumentsComponents() {
     process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
   const token = session?.user?.token;
 
-  const categories = [
-    "All",
-    ...Array.from(
-      new Set(documents.map((d) => d.template?.category || "General")),
-    ),
-  ];
+  const CATEGORY_LABELS: Record<string, string> = {
+    GENERAL: 'General',
+    LEGAL: 'Legal',
+    FINANCE: 'Finance',
+    HR: 'HR',
+    MARKETING: 'Marketing',
+    SALES: 'Sales',
+    OTHER: 'Other',
+  };
+
+  const categories = ['All', 'GENERAL', 'LEGAL', 'FINANCE', 'HR', 'MARKETING', 'SALES', 'OTHER'];
 
   const filteredDocuments = documents
     .filter((doc) => {
@@ -67,7 +72,7 @@ export function GeneratedDocumentsComponents() {
         doc.user?.name?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory =
         selectedCategory === "All" ||
-        doc.template?.category === selectedCategory;
+        (doc.template?.category || 'GENERAL') === selectedCategory;
       return matchesSearch && matchesCategory;
     })
     .sort((a, b) => {
@@ -278,23 +283,23 @@ export function GeneratedDocumentsComponents() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-100">
+    <div className="flex flex-col h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[rgb(132,42,59)]/10 rounded-xl">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke-width="1.5"
+                strokeWidth="1.5"
                 stroke="currentColor"
-                className="size-6"
+                className="size-5 text-[rgb(132,42,59)]"
               >
                 <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
                 />
               </svg>
@@ -304,79 +309,17 @@ export function GeneratedDocumentsComponents() {
               <p className="text-xs text-gray-500">{documents.length} total</p>
             </div>
           </div>
-        </div>
 
-        {/* Categories */}
-        <div className="p-4 flex-1 overflow-y-auto">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Categories
-          </p>
-          <div className="space-y-1">
-            {categories.map((category) => {
-              const count =
-                category === "All"
-                  ? documents.length
-                  : documents.filter((d) => d.template?.category === category)
-                      .length;
-              return (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all ${
-                    selectedCategory === category
-                      ? "bg-[rgb(132,42,59)] text-white font-medium"
-                      : "text-gray-600 hover:bg-gray-100"
-                  }`}
-                >
-                  <span>{category}</span>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
-                      selectedCategory === category
-                        ? "bg-white/20 text-white"
-                        : "bg-gray-100 text-gray-500"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Sort Options */}
-        <div className="p-4 border-t border-gray-100">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Sort By
-          </p>
-          <select
-            value={sortBy}
-            onChange={(e) =>
-              setSortBy(e.target.value as "newest" | "oldest" | "name")
-            }
-            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
             {/* Search */}
-            <div className="flex-1 max-w-md relative">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search documents..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent transition-all"
+                className="w-64 pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent transition-all"
               />
               {searchQuery && (
                 <button
@@ -387,24 +330,71 @@ export function GeneratedDocumentsComponents() {
                 </button>
               )}
             </div>
-          </div>
 
-          {/* Results info */}
-          <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
-            <span>
-              Showing {filteredDocuments.length} of {documents.length} documents
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={(e) =>
+                setSortBy(e.target.value as "newest" | "oldest" | "name")
+              }
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="name">Name (A-Z)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Horizontal Category Tabs */}
+        <div className="px-8 pb-3 flex items-center gap-2 overflow-x-auto">
+          {categories.map((category) => {
+            const count =
+              category === "All"
+                ? documents.length
+                : documents.filter((d) => (d.template?.category || 'GENERAL') === category)
+                    .length;
+            return (
+              <button
+                key={category}
+                onClick={() => setSelectedCategory(category)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
+                  selectedCategory === category
+                    ? "bg-[rgb(132,42,59)] text-white font-medium"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <span>{CATEGORY_LABELS[category] || category}</span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    selectedCategory === category
+                      ? "bg-white/20 text-white"
+                      : "bg-gray-200 text-gray-500"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Results info */}
+        <div className="px-8 pb-3 flex items-center gap-2 text-sm text-gray-500">
+          <span>
+            Showing {filteredDocuments.length} of {documents.length} documents
+          </span>
+          {selectedCategory !== "All" && (
+            <span className="px-2 py-0.5 bg-[rgb(132,42,59)]/10 text-[rgb(132,42,59)] rounded-full text-xs font-medium">
+              {CATEGORY_LABELS[selectedCategory] || selectedCategory}
             </span>
-            {selectedCategory !== "All" && (
-              <span className="px-2 py-0.5 bg-[rgb(132,42,59)]/10 text-[rgb(132,42,59)] rounded-full text-xs font-medium">
-                {selectedCategory}
-              </span>
-            )}
-          </div>
-        </header>
+          )}
+        </div>
+      </header>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {filteredDocuments.length === 0 ? (
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-6">
+        {filteredDocuments.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <FolderOpen className="h-10 w-10 text-gray-300" />
@@ -450,7 +440,7 @@ export function GeneratedDocumentsComponents() {
                     </div>
                     <div className="col-span-2">
                       <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-                        {doc.template?.category || "General"}
+                        {CATEGORY_LABELS[doc.template?.category || 'GENERAL'] || doc.template?.category}
                       </span>
                     </div>
                     <div className="col-span-2 text-sm text-gray-600 truncate">
@@ -490,7 +480,6 @@ export function GeneratedDocumentsComponents() {
               </div>
             </div>
           )}
-        </div>
       </main>
     </div>
   );

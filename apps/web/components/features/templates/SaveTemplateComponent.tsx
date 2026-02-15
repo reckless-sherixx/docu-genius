@@ -29,6 +29,16 @@ interface Template {
     mime_type: string | null;
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+    GENERAL: 'General',
+    LEGAL: 'Legal',
+    FINANCE: 'Finance',
+    HR: 'HR',
+    MARKETING: 'Marketing',
+    SALES: 'Sales',
+    OTHER: 'Other',
+};
+
 export function SaveTemplateComponent() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -43,10 +53,10 @@ export function SaveTemplateComponent() {
 
     const token = session?.user?.token;
 
-    const categories = ['All', ...Array.from(new Set(templates.map(t => t.category || 'General')))];
+    const categories = ['All', 'GENERAL', 'LEGAL', 'FINANCE', 'HR', 'MARKETING', 'SALES', 'OTHER'];
 
     const filteredTemplates = templates.filter(template => {
-        const matchesCategory = selectedCategory === 'All' || template.category === selectedCategory;
+        const matchesCategory = selectedCategory === 'All' || (template.category || 'GENERAL') === selectedCategory;
         const matchesSearch = template.template_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             (template.template_description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
         return matchesCategory && matchesSearch;
@@ -140,95 +150,100 @@ export function SaveTemplateComponent() {
     }, [organizationId, fetchTemplates]);
 
     return (
-        <div className="flex h-screen bg-gray-50">
-            {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-gray-200 overflow-y-auto">
-                <div className="p-6">
-                    <div className="flex items-center gap-2 mb-6">
-                        <FileText className="h-6 w-6 text-[rgb(132,42,59)]" />
-                        <h1 className="text-xl font-semibold text-gray-900">Template gallery</h1>
+        <div className="flex flex-col h-screen bg-gray-50">
+            {/* Header */}
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+                <div className="px-8 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-[rgb(132,42,59)]/10 rounded-xl">
+                            <FileText className="h-5 w-5 text-[rgb(132,42,59)]" />
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-bold text-gray-900">Template Gallery</h1>
+                            <p className="text-xs text-gray-500">{templates.length} total</p>
+                        </div>
                     </div>
 
-                    <div className="space-y-1">
-                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                            Categories
-                        </div>
-                        {categories.map((category) => (
+                    <div className="flex items-center gap-3">
+                        {showSearch ? (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Search templates..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={() => {
+                                        setShowSearch(false);
+                                        setSearchQuery('');
+                                    }}
+                                    className="p-2 hover:bg-gray-100 rounded-lg"
+                                >
+                                    <X className="h-5 w-5 text-gray-600" />
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => setShowSearch(true)}
+                                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition"
+                            >
+                                <Search className="h-4 w-4 text-gray-600" />
+                                Search
+                            </button>
+                        )}
+
+                        <button
+                            onClick={fetchTemplates}
+                            disabled={loadingTemplates}
+                            className="text-sm text-[rgb(132,42,59)] hover:underline px-4 py-2"
+                        >
+                            {loadingTemplates ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                'Refresh'
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Horizontal Category Tabs */}
+                <div className="px-8 pb-3 flex items-center gap-2 overflow-x-auto">
+                    {categories.map((category) => {
+                        const count =
+                            category === 'All'
+                                ? templates.length
+                                : templates.filter((t) => (t.category || 'GENERAL') === category).length;
+                        return (
                             <button
                                 key={category}
                                 onClick={() => setSelectedCategory(category)}
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                                     selectedCategory === category
-                                        ? 'bg-gray-100 text-gray-900 font-medium'
-                                        : 'text-gray-600 hover:bg-gray-50'
+                                        ? 'bg-[rgb(132,42,59)] text-white font-medium'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                             >
-                                {category}
+                                <span>{CATEGORY_LABELS[category] || category}</span>
+                                <span
+                                    className={`text-xs px-2 py-0.5 rounded-full ${
+                                        selectedCategory === category
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-gray-200 text-gray-500'
+                                    }`}
+                                >
+                                    {count}
+                                </span>
                             </button>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
-            </aside>
+            </header>
 
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto">
-                {/* Header */}
-                <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                    <div className="px-8 py-4 flex items-center justify-between">
-                        <div>
-                            <h2 className="text-2xl font-bold text-gray-900">{selectedCategory}</h2>
-                            <p className="text-sm text-gray-500 mt-1">
-                                {selectedCategory === 'All'
-                                    ? 'Your permanently saved editable templates'
-                                    : `Templates in ${selectedCategory} category`}
-                            </p>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                            {showSearch ? (
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Search templates..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(132,42,59)] focus:border-transparent"
-                                        autoFocus
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            setShowSearch(false);
-                                            setSearchQuery('');
-                                        }}
-                                        className="p-2 hover:bg-gray-100 rounded-lg"
-                                    >
-                                        <X className="h-5 w-5 text-gray-600" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => setShowSearch(true)}
-                                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition"
-                                >
-                                    <Search className="h-4 w-4 text-gray-600" />
-                                    Search
-                                </button>
-                            )}
-
-                            <button
-                                onClick={fetchTemplates}
-                                disabled={loadingTemplates}
-                                className="text-sm text-[rgb(132,42,59)] hover:underline px-4 py-2"
-                            >
-                                {loadingTemplates ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    'Refresh'
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </header>
 
                 {/* Templates Grid */}
                 <div className="px-8 py-6">
@@ -313,7 +328,7 @@ export function SaveTemplateComponent() {
                                         <h3 className="font-semibold text-gray-900 text-base mb-1 truncate" title={template.template_name}>
                                             {template.template_name}
                                         </h3>
-                                        <p className="text-sm text-gray-500">{template.category || 'General'}</p>
+                                        <p className="text-sm text-gray-500">{CATEGORY_LABELS[template.category || 'GENERAL'] || template.category}</p>
                                     </div>
                                 </div>
                             ))}

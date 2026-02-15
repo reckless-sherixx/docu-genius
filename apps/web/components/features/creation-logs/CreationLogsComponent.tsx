@@ -252,7 +252,7 @@ export default function CreationLogsComponent() {
 
                     <div className="col-span-2">
                       <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs rounded-full font-medium">
-                        {log.template?.category || "General"}
+                        {({ GENERAL: 'General', LEGAL: 'Legal', FINANCE: 'Finance', HR: 'HR', MARKETING: 'Marketing', SALES: 'Sales', OTHER: 'Other' }[log.template?.category || 'GENERAL']) || log.template?.category}
                       </span>
                     </div>
 
