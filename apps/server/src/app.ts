@@ -9,6 +9,7 @@ import organizationRoutes from './routes/organization.route.js';
 import templateRoutes from './routes/template.route.js';
 import pdfEditorRoutes from './routes/pdf-editor.route.js';
 import generatedDocumentRoutes from './routes/generated-document.route.js';
+import verificationRoutes from './routes/verification.route.js'
 import { appLimiter } from './config/rateLimit.config.js';
 
 
@@ -33,6 +34,7 @@ export const createApp = (): Express => {
     app.use("/api/templates", templateRoutes);
     app.use("/api/pdf-editor", pdfEditorRoutes);
     app.use("/api/generated-documents", generatedDocumentRoutes);
+    app.use("/", verificationRoutes);
 
     app.get("/health", (req: Request, res: Response) => res.json({ status: "ok" }));
 
