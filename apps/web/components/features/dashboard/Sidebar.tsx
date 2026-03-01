@@ -13,6 +13,7 @@ import {
   IconUsers,
   IconBookmark,
   IconChevronDown,
+  IconBuildingPlus,
 } from "@tabler/icons-react";
 import { motion } from "motion/react";
 import CloudIcon from "@/public/CloudWhite.png";
@@ -76,12 +77,20 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
     },
   ];
 
+
   const personaliseLinks = [
     {
       label: "Profile",
       href: `/${userId}/profile`,
       icon: (
         <IconSettings className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    {
+      label: "New Organization",
+      href: "/onboarding",
+      icon: (
+        <IconBuildingPlus className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
   ];

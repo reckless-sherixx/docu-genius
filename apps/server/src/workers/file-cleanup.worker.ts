@@ -48,7 +48,6 @@ class FileCleanupWorker {
 
   /**
    * Scan and cleanup expired files
-   * Run periodically to find and delete expired temporary files
    */
   async scanExpiredFiles(): Promise<void> {
     try {
@@ -116,12 +115,12 @@ cleanupWorker.on('failed', (job, err) => {
   console.error(`❌ Cleanup job failed: ${job?.id}`, err);
 });
 
-// Scheduled scanner (runs every hour)
+// Scheduled scanner 
 setInterval(
   async () => {
     await fileCleanupWorker.scanExpiredFiles();
   },
-  60 * 60 * 1000 // 1 hour
+  60 * 60 * 1000 
 );
 
 console.log('🧹 File cleanup worker started');

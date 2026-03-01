@@ -34,6 +34,9 @@ export class NlpService {
     private static isTraining = false;
     private static isReady = false;
 
+    /** Only entities with confidence strictly above this threshold are returned */
+    private static readonly CONFIDENCE_THRESHOLD = 0.9;
+
     /**
      * Initialize and train the NLP manager
      */
@@ -179,7 +182,7 @@ export class NlpService {
                             text: entity.sourceText || entity.utteranceText || entity.option,
                             start: entity.start || 0,
                             end: entity.end || 0,
-                            confidence: entity.accuracy || 0.9,
+                            confidence: entity.accuracy ?? 0.95,
                         });
                     }
                 }
@@ -194,12 +197,26 @@ export class NlpService {
             // Deduplicate entities
             const uniqueEntities = this.deduplicateEntities(entities);
 
+            // Filter to only include results with confidence strictly above the threshold
+            const highConfidenceEntities = uniqueEntities.filter(
+                e => e.confidence > this.CONFIDENCE_THRESHOLD
+            );
+            const highConfidencePlaceholders = placeholders.filter(
+                p => p.confidence > this.CONFIDENCE_THRESHOLD
+            );
+
+            console.log(
+                `🎯 Confidence filter (>${(this.CONFIDENCE_THRESHOLD * 100).toFixed(0)}%): ` +
+                `${highConfidenceEntities.length}/${uniqueEntities.length} entities kept, ` +
+                `${highConfidencePlaceholders.length}/${placeholders.length} placeholders kept`
+            );
+
             // Log results
-            this.logExtractionResults(uniqueEntities, placeholders);
+            this.logExtractionResults(highConfidenceEntities, highConfidencePlaceholders);
 
             return {
-                entities: uniqueEntities,
-                placeholders,
+                entities: highConfidenceEntities,
+                placeholders: highConfidencePlaceholders,
                 rawText: text,
             };
         } catch (error) {

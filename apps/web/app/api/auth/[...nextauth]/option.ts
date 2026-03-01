@@ -16,15 +16,12 @@ export const authOptions: AuthOptions = {
             return true
         },
         async redirect({ url, baseUrl }) {
-            // If the url is just the base, redirect to dashboard
             if (url === baseUrl || url === `${baseUrl}/`) {
                 return `${baseUrl}/dashboard`;
             }
-            // If url starts with baseUrl, allow it
             if (url.startsWith(baseUrl)) {
                 return url;
             }
-            // Default to dashboard
             return `${baseUrl}/dashboard`;
         },
         async session({ session, token }) {
@@ -53,7 +50,6 @@ export const authOptions: AuthOptions = {
                 const { data } = await axios.post(LOGIN_URL, credentials)
                 const result = data?.data;
                 if (result && result.user && result.token) {
-                    // Return user with token attached
                     return {
                         ...result.user,
                         token: result.token
