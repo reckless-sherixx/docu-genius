@@ -5,7 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node dist/index",
+    "start": "node dist/server.js",
     "build": "prisma generate && tsc -p . && pnpm run copy",
     "dev": "tsc-watch --onSuccess \"node dist/server.js\"",
     "test": "echo \"Error: no test specified\" && exit 1",
