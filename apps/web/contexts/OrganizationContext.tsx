@@ -19,15 +19,17 @@ interface OrganizationContextType {
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'docu_organizations';
+const STORAGE_USER_KEY = 'docu_organizations_user';
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
-  const fetchedRef = useRef(false);
+  const fetchingRef = useRef(false);
  
   const [organizations, setOrganizations] = useState<Organization[]>(() => {
     if (typeof window !== 'undefined') {
+      const cachedUserId = localStorage.getItem(STORAGE_USER_KEY);
       const cached = localStorage.getItem(STORAGE_KEY);
-      if (cached) {
+      if (cached && cachedUserId) {
         try {
           return JSON.parse(cached);
         } catch (e) {
@@ -63,9 +65,9 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
         if (data.success && data.data) {
           setOrganizations(data.data);
           
-          // Cache in localStorage
           if (typeof window !== 'undefined') {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+            localStorage.setItem(STORAGE_USER_KEY, session.user.id || '');
           }
         }
       }
@@ -76,22 +78,38 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Only fetch once on initial mount if no cached data exists
   useEffect(() => {
-    if (fetchedRef.current) return;
-  
-    if (organizations.length > 0) {
-      fetchedRef.current = true;
-      return;
-    }
+    if (status !== 'authenticated' || !session?.user?.token) return;
+    if (fetchingRef.current) return;
     
-    // Only fetch if authenticated and no cached data
-    if (status === 'authenticated' && session?.user?.token) {
-      fetchedRef.current = true;
-      refetchOrganizations();
+    const currentUserId = session.user.id || '';
+    const cachedUserId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_USER_KEY) : null;
+    const cachedData = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    
+    // Only fetch if: different user, no cache, or cache missing role data
+    if (cachedUserId === currentUserId && cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        // If cache has data with role field, it's valid — skip fetch
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].role) {
+          setOrganizations(parsed);
+          return;
+        }
+      } catch (e) {
+        console.warn('Invalid cached organizations data:', e);
+      }
     }
+
+    if (cachedUserId && cachedUserId !== currentUserId && typeof window !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_USER_KEY);
+      setOrganizations([]);
+    }
+
+    fetchingRef.current = true;
+    refetchOrganizations().finally(() => { fetchingRef.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
+  }, [status, session?.user?.id]);
 
   return (
     <OrganizationContext.Provider

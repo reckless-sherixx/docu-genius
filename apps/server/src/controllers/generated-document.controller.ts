@@ -112,7 +112,6 @@ export class GeneratedDocumentController {
         });
       }
 
-      // Check if user is the creator of the document or an admin of the organization
       const membership = document.organization?.members[0];
       const isCreator = document.generated_by === userId;
       const isAdmin = membership?.role === 'ADMIN';
@@ -143,9 +142,6 @@ export class GeneratedDocumentController {
     }
   }
 
-  /**
-   * Email a generated document to a candidate with custom subject and body
-   */
   async emailDocument(req: Request, res: Response): Promise<any> {
     try {
       const { id } = req.params;
@@ -227,17 +223,15 @@ export class GeneratedDocumentController {
         });
       }
 
-      // Generate a fresh presigned download URL (24 hours validity)
+      // Generate a fresh presigned download URL 
       let downloadUrl = document.generated_document_url;
       try {
         const url = new URL(document.generated_document_url);
         const bucketName = process.env.AWS_S3_BUCKET_NAME || '';
         let s3Key: string;
         if (url.hostname.startsWith(bucketName)) {
-          // Virtual-hosted style: bucket.s3.region.amazonaws.com/key
           s3Key = decodeURIComponent(url.pathname.slice(1));
         } else {
-          // Path-style: s3.region.amazonaws.com/bucket/key
           s3Key = decodeURIComponent(url.pathname.replace(new RegExp(`^/${bucketName}/`), ''));
         }
         if (s3Key) {
