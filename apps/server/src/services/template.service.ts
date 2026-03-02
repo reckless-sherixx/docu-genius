@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma.js";
 import { S3Service } from "../lib/aws/s3.js";
+import { TemplateCategory } from "@prisma/client";
 
 export class TemplateService {
 
@@ -46,7 +47,7 @@ export class TemplateService {
                     s3_url: uploadResult.url,
                     file_size: BigInt(file.size),
                     mime_type: file.mimetype,
-                    category: templateData.category || 'GENERAL',
+                    category: (templateData.category || 'GENERAL') as TemplateCategory,
                     uploaded_by: userId,
                     organization_id: organizationId,
                 },
@@ -225,7 +226,7 @@ export class TemplateService {
                     s3_url: `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
                     file_size: BigInt(templateData.size),
                     mime_type: templateData.mimeType,
-                    category: templateData.category || 'GENERAL',
+                    category: (templateData.category || 'GENERAL') as TemplateCategory,
                     uploaded_by: userId,
                     organization_id: organizationId,
                 },
