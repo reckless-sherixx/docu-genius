@@ -8,7 +8,6 @@ export class AuthController {
     // Register a new user
     static async register(req: Request, res: Response) {
         try {
-            // Validate request body
             const validatedData = registerSchema.parse(req.body);
 
             // Register user

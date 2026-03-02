@@ -24,8 +24,14 @@ import { LogsIcon } from "lucide-react";
 export function SidebarDemo({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { organizations } = useOrganization();
   const organizationId = pathname?.split('/')[2]; 
-  const userId = session?.user?.id; 
+  const userId = session?.user?.id;
+
+  // Get the user's role in the current organization
+  const currentOrg = organizations.find((o) => o.id === organizationId);
+  const userRole = currentOrg?.role; // 'ADMIN' | 'CREATOR' | undefined
+
  const mainLinks = [
     {
       label: "Dashboard",
@@ -36,6 +42,7 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
     },
   ];
 
+  // Hide "Upload Template" for CREATOR role
   const analyticsLinks = [
     {
       label: "Templates",
@@ -44,15 +51,16 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
         <IconTrendingUp className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
-    {
+    ...(userRole !== 'CREATOR' ? [{
       label: "Upload Template",
       href: `/dashboard/${organizationId}/template`,
       icon: (
         <IconFileText className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
-    },
+    }] : []),
   ];
 
+  // Hide "Creation Logs" for CREATOR role
   const organizationLinks = [
     {
       label: "Members",
@@ -68,13 +76,13 @@ export function SidebarDemo({ children }: { children?: React.ReactNode }) {
         <IconBookmark className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
     },
-    {
+    ...(userRole !== 'CREATOR' ? [{
       label: "Creation Logs",
       href: `/dashboard/${organizationId}/creation-logs`,
       icon: (
         <LogsIcon className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
       ),
-    },
+    }] : []),
   ];
 
 

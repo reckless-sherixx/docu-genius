@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('../partials/header') %>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <h1><%= emailSubject %></h1>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+        <!-- Custom Body from sender -->
+        <div style="white-space: pre-line; margin-bottom: 24px; line-height: 1.6;">
+          <%= emailBody %>
+        </div>
+
+        <!-- Document Download -->
+        <div style="background: #f0f0ff; border-radius: 8px; padding: 20px; margin: 24px 0; text-align: center;">
+          <p style="margin: 0 0 12px 0; font-weight: 600; color: #333;">📄 Your Document is Ready</p>
+          <p style="margin: 0 0 16px 0; font-size: 13px; color: #666;">Document ID: <strong><%= documentNumber %></strong></p>
+          <a href="<%= downloadUrl %>" class="btn" style="display: inline-block;">Download Document</a>
+          <p style="margin: 12px 0 0 0; font-size: 11px; color: #999;">This download link expires in 24 hours.</p>
+        </div>
+
+        <!-- Verification Section -->
+        <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 24px;">
+          <p style="font-weight: 600; color: #333; margin-bottom: 8px;">🔐 Verify This Document</p>
+          <p style="font-size: 13px; color: #666; margin-bottom: 4px;">
+            Document ID: <strong><%= documentNumber %></strong>
+          </p>
+          <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+            You can verify the authenticity of this document anytime using the link below:
+          </p>
+          <p style="text-align: center;">
+            <a href="<%= verificationUrl %>" style="display: inline-block; padding: 10px 20px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Verify Document</a>
+          </p>
+        </div>
+
+        <p style="margin-top: 24px; font-size: 12px; color: #999;">
+          Sent via DocGenius by <%= organizationName %>
+        </p>
+      </div>
+
+      <%- include('../partials/footer') %>
+    </div>
+  </body>
+</html>

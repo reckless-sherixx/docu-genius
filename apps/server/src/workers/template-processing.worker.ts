@@ -5,7 +5,7 @@ import { s3Service } from '../services/s3.service.js';
 import { redisConnection } from '../config/redis.config.js';
 import { NlpService } from '../services/nlp.service.js';
 import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
+import { tesseractPool } from '../lib/tesseract-pool.js';
 import { createRequire } from 'module';
 import { pdf } from 'pdf-to-img';
 
@@ -224,46 +224,50 @@ class TemplateProcessor {
   }
 
   /**
-   * Perform OCR on a PDF by converting pages to images first
+   * Preprocess image for OCR
+   */
+  private async preprocessForOCR(buffer: Buffer): Promise<Buffer> {
+    return sharp(buffer)
+      .greyscale()
+      .normalize()
+      .modulate({ brightness: 1.1 })
+      .sharpen({ sigma: 2, m1: 1, m2: 0.5 })
+      .gamma(1.2)
+      .toBuffer();
+  }
+
+  /**
+   * Perform OCR on a PDF by converting pages to images first.
+   * Uses the shared Tesseract worker pool and processes pages in parallel.
    */
   private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
     console.log(`🔤 Running OCR on PDF pages...`);
     
     try {
-      // Convert all PDF pages to images
-      console.log('📄 Converting PDF pages to images...');
       const images = await this.convertPDFToImages(buffer, 2);
       const numPages = images.length;
       
-      console.log(`✅ Converted ${numPages} pages to images`);
+      // Preprocess all images in parallel
+      const preprocessed = await Promise.all(
+        images.filter((img): img is Buffer => !!img).map(img => this.preprocessForOCR(img))
+      );
       
-      // Run OCR on each page
-      const worker = await createWorker('eng');
-      let fullText = '';
+      // OCR all pages in parallel using the worker pool
+      const pageTexts = await Promise.all(
+        preprocessed.map(async (ppBuffer, i) => {
+          const worker = await tesseractPool.acquire();
+          try {
+            console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
+            const { data: { text } } = await worker.recognize(ppBuffer);
+            return text;
+          } finally {
+            tesseractPool.release(worker);
+          }
+        })
+      );
       
-      try {
-        for (let i = 0; i < numPages; i++) {
-          const imageBuffer = images[i];
-          if (!imageBuffer) continue;
-          
-          // Preprocess image with Sharp for better OCR results
-          const preprocessedBuffer = await sharp(imageBuffer)
-            .greyscale()
-            .normalize()
-            .sharpen()
-            .toBuffer();
-          
-          console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
-          const { data: { text } } = await worker.recognize(preprocessedBuffer);
-          
-          fullText += text + '\n\n--- Page Break ---\n\n';
-        }
-      } finally {
-        await worker.terminate();
-      }
-      
+      const fullText = pageTexts.join('\n\n--- Page Break ---\n\n');
       console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
-      
       return fullText.trim();
     } catch (error) {
       console.error('❌ PDF OCR failed:', error);
@@ -272,31 +276,23 @@ class TemplateProcessor {
   }
 
   /**
-   * Perform OCR on an image buffer using Tesseract
+   * Perform OCR on an image buffer using Tesseract 
    */
   private async performOCR(buffer: Buffer): Promise<string> {
-    console.log('🔤 Running OCR with Tesseract...');
+    console.log('🔤 Running OCR with Tesseract (pooled)...');
     
-    const worker = await createWorker('eng');
+    const preprocessedBuffer = await this.preprocessForOCR(buffer);
+    const worker = await tesseractPool.acquire();
     
     try {
-      // Preprocess image with Sharp for better OCR results
-      const preprocessedBuffer = await sharp(buffer)
-        .greyscale()
-        .normalize()
-        .sharpen()
-        .toBuffer();
-      
       const { data: { text } } = await worker.recognize(preprocessedBuffer);
-      
       console.log(`✅ OCR completed, extracted ${text.length} characters`);
-      
       return text;
     } catch (error) {
       console.error('❌ OCR failed:', error);
       throw new Error('OCR processing failed');
     } finally {
-      await worker.terminate();
+      tesseractPool.release(worker);
     }
   }
 

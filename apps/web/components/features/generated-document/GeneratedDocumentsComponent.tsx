@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Search,
   X,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +47,15 @@ export function GeneratedDocumentsComponents() {
   // list-only view
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "name">("newest");
   const hasFetched = useRef(false);
+
+  // Email dialog state
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [selectedDocForEmail, setSelectedDocForEmail] = useState<GeneratedDocument | null>(null);
+  const [emailRecipient, setEmailRecipient] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const backendUrl =
     process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
@@ -88,6 +98,29 @@ export function GeneratedDocumentsComponents() {
         b.template?.template_name || "",
       );
     });
+
+  // Fetch user role in organization
+  useEffect(() => {
+    const fetchRole = async () => {
+      if (!token || !organizationId) return;
+      try {
+        const response = await fetch(
+          `${backendUrl}/api/v1/organization`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data) {
+            const org = data.data.find((o: any) => o.id === organizationId);
+            if (org?.role) setUserRole(org.role);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching user role:", err);
+      }
+    };
+    fetchRole();
+  }, [token, organizationId, backendUrl]);
 
   useEffect(() => {
     const fetchDocuments = async () => {
@@ -136,6 +169,70 @@ export function GeneratedDocumentsComponents() {
   const handleDownload = (url: string, templateName: string) => {
     window.open(url, "_blank");
     toast.success(`Downloading ${templateName}`);
+  };
+
+  const handleEmailClick = (doc: GeneratedDocument) => {
+    // Only document generator or admin can email
+    const isGenerator = doc.generated_by === session?.user?.id;
+    const isAdmin = userRole === "ADMIN";
+    if (!isGenerator && !isAdmin) {
+      toast.error("Only the document generator or an admin can email documents");
+      return;
+    }
+    setSelectedDocForEmail(doc);
+    setEmailRecipient("");
+    setEmailSubject(`Document ${doc.document_number || ""} - ${doc.template?.template_name || "DocGenius"}`);
+    setEmailBody("");
+    setShowEmailModal(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!selectedDocForEmail) return;
+    const trimmedEmail = emailRecipient.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+    if (!emailSubject.trim()) {
+      toast.error("Please enter an email subject");
+      return;
+    }
+    if (!emailBody.trim()) {
+      toast.error("Please enter an email body");
+      return;
+    }
+
+    try {
+      setEmailSending(true);
+      const response = await fetch(
+        `${backendUrl}/api/generated-documents/${selectedDocForEmail.id}/email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            recipientEmail: trimmedEmail,
+            emailSubject: emailSubject.trim(),
+            emailBody: emailBody.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success(`Email sent to ${trimmedEmail}`);
+        setShowEmailModal(false);
+      } else {
+        toast.error(data.message || "Failed to send email");
+      }
+    } catch (err) {
+      console.error("Error sending email:", err);
+      toast.error("Failed to send email");
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const handleDelete = async (documentId: string) => {
@@ -449,7 +546,16 @@ export function GeneratedDocumentsComponents() {
                     <div className="col-span-2 text-sm text-gray-500">
                       {formatDate(doc.created_at)}
                     </div>
-                    <div className="col-span-1 flex items-center justify-end gap-2">
+                    <div className="col-span-1 flex items-center justify-end gap-1">
+                      {(doc.generated_by === session?.user?.id || userRole === "ADMIN") && (
+                        <button
+                          onClick={() => handleEmailClick(doc)}
+                          className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          title="Email document"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() =>
                           handleDownload(
@@ -481,6 +587,112 @@ export function GeneratedDocumentsComponents() {
             </div>
           )}
       </main>
+
+      {/* Email Dialog Modal */}
+      {showEmailModal && selectedDocForEmail && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <Mail className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Email Document</h3>
+                  <p className="text-xs text-gray-500">{selectedDocForEmail.document_number}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Document info */}
+              <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
+                <FileText className="h-5 w-5 text-[rgb(132,42,59)] flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {selectedDocForEmail.template?.template_name || "Untitled"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    The document will be attached with a 24-hour download link and verification details.
+                  </p>
+                </div>
+              </div>
+
+              {/* Recipient Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Email</label>
+                <input
+                  type="email"
+                  value={emailRecipient}
+                  onChange={(e) => setEmailRecipient(e.target.value)}
+                  placeholder="candidate@example.com"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Email Subject */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  placeholder="Email subject..."
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Email Body */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                <textarea
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  placeholder="Write your message to the recipient..."
+                  rows={5}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                disabled={emailSending}
+                className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={emailSending || !emailRecipient.trim() || !emailSubject.trim() || !emailBody.trim()}
+                className="px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {emailSending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4" />
+                    Send Email
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

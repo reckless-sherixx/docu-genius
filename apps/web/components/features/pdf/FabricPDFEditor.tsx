@@ -1180,7 +1180,24 @@ export default function FabricPDFEditor({ templateId: initialTemplateId }: PDFEd
         }
     };
 
-    const handleGenerateClick = () => {
+    const handleGenerateClick = async () => {
+        try {
+            const profileRes = await fetch(`${backendUrl}/api/auth/profile`, {
+                headers: {
+                    Authorization: `Bearer ${session?.user?.token}`,
+                },
+            });
+            const profileData = await profileRes.json();
+
+            if (!profileData?.data?.hasPin) {
+                toast.error('First create document generation PIN to generate document');
+                return;
+            }
+        } catch {
+            toast.error('Failed to verify PIN status. Please try again.');
+            return;
+        }
+
         setPin('');
         setPinError(null);
         setShowPinModal(true);

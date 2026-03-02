@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { emailQueueWorker } from "./workers/email.worker.js";
 import { templateProcessingWorker } from "./workers/template-processing.worker.js";
 import { initializeSocketIO } from "./config/websocket.config.js";
+import { tesseractPool } from "./lib/tesseract-pool.js";
 
 const PORT = process.env.PORT || 4000;
 
@@ -33,6 +34,12 @@ async function startServer() {
             console.log(`📧 Email worker is listening for jobs...`);
             console.log(`📄 Template processing worker is listening for jobs...`);
             console.log(`🔌 WebSocket server is ready for connections...`);
+        });
+
+        tesseractPool.warmup(2).then(() => {
+            console.log('🔤 Tesseract OCR workers warmed up and ready');
+        }).catch(err => {
+            console.warn('⚠️ Tesseract warmup failed (will initialize lazily):', err.message);
         });
     } catch (error) {
         console.error("Error starting server:", error);

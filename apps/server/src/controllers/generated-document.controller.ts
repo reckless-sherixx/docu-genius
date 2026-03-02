@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
+import { s3Service } from '../services/s3.service.js';
+import { emailQueue } from '../queues/email.queue.js';
+import { renderEmailEjs } from '../lib/helper.js';
 
 export class GeneratedDocumentController {
   /**
@@ -135,6 +138,148 @@ export class GeneratedDocumentController {
       return res.status(500).json({
         success: false,
         message: 'Failed to delete document',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Email a generated document to a candidate with custom subject and body
+   */
+  async emailDocument(req: Request, res: Response): Promise<any> {
+    try {
+      const { id } = req.params;
+      const { recipientEmail, emailSubject, emailBody: customBody } = req.body;
+      const userId = (req as any).userId;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Document ID is required',
+        });
+      }
+
+      if (!recipientEmail) {
+        return res.status(400).json({
+          success: false,
+          message: 'Recipient email is required',
+        });
+      }
+
+      if (!emailSubject || !customBody) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email subject and body are required',
+        });
+      }
+
+      // Get the document with template, user and organization info
+      const document = await prisma.generatedDocument.findUnique({
+        where: { id },
+        include: {
+          template: {
+            select: {
+              template_name: true,
+              category: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          organization: {
+            select: {
+              name: true,
+              members: {
+                where: { user_id: userId },
+              },
+            },
+          },
+        },
+      });
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          message: 'Document not found',
+        });
+      }
+
+      // Only the document generator or an admin can send emails
+      const membership = document.organization?.members[0];
+      if (!membership) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to email this document',
+        });
+      }
+
+      const isDocumentGenerator = document.generated_by === userId;
+      const isAdmin = membership.role === 'ADMIN';
+
+      if (!isDocumentGenerator && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only the document generator or an organization admin can email documents',
+        });
+      }
+
+      // Generate a fresh presigned download URL (24 hours validity)
+      let downloadUrl = document.generated_document_url;
+      try {
+        const url = new URL(document.generated_document_url);
+        const bucketName = process.env.AWS_S3_BUCKET_NAME || '';
+        let s3Key: string;
+        if (url.hostname.startsWith(bucketName)) {
+          // Virtual-hosted style: bucket.s3.region.amazonaws.com/key
+          s3Key = decodeURIComponent(url.pathname.slice(1));
+        } else {
+          // Path-style: s3.region.amazonaws.com/bucket/key
+          s3Key = decodeURIComponent(url.pathname.replace(new RegExp(`^/${bucketName}/`), ''));
+        }
+        if (s3Key) {
+          downloadUrl = await s3Service.generatePresignedDownloadUrl(s3Key, 86400); // 24 hours
+        }
+      } catch {
+        console.warn('⚠️ Could not parse S3 key from document URL, using stored URL');
+      }
+
+      // Build the verification URL
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const cleanDocNumber = document.document_number!.replace('#', '');
+      const verificationUrl = `${frontendUrl}/verification?id=${encodeURIComponent(cleanDocNumber)}`;
+
+      // Render the email template with custom subject/body
+      const emailHtml = await renderEmailEjs('document-email', {
+        emailSubject,
+        emailBody: customBody,
+        documentNumber: document.document_number,
+        downloadUrl,
+        verificationUrl,
+        organizationName: document.organization?.name || 'Unknown',
+      });
+
+      // Queue the email
+      await emailQueue.add('emailQueueName', {
+        to: recipientEmail,
+        subject: emailSubject,
+        html: emailHtml,
+      });
+
+      console.log(`📧 Document email queued: ${document.document_number} → ${recipientEmail}`);
+
+      return res.status(200).json({
+        success: true,
+        message: `Document emailed successfully to ${recipientEmail}`,
+      });
+    } catch (error) {
+      console.error('❌ Error emailing document:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to email document',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }

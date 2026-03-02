@@ -443,10 +443,16 @@ export class PDFEditorController {
         });
       }
 
-      // Get the template
-      const template = await prisma.template.findUnique({
-        where: { id: templateId },
-      });
+      // Fetch template and last document number in parallel
+      const [template, lastDocument] = await Promise.all([
+        prisma.template.findUnique({
+          where: { id: templateId },
+        }),
+        prisma.generatedDocument.findFirst({
+          orderBy: { created_at: 'desc' },
+          select: { document_number: true },
+        }),
+      ]);
 
       if (!template) {
         return res.status(404).json({
@@ -454,11 +460,6 @@ export class PDFEditorController {
           message: 'Template not found',
         });
       }
-
-      const lastDocument = await prisma.generatedDocument.findFirst({
-        orderBy: { created_at: 'desc' },
-        select: { document_number: true },
-      });
 
       let nextNumber = 1;
       if (lastDocument?.document_number) {
@@ -469,16 +470,15 @@ export class PDFEditorController {
       }
       const documentNumber = `#DOC-${String(nextNumber).padStart(4, '0')}`;
 
-      const savedPdf = await pdfEditorService.saveEditablePDF(
+      const generatedPdf = await pdfEditorService.generateDocumentPDF(
         templateId,
         textElements || [],
-        [],
         template.organization_id || '',
         imageElements || [],
         documentNumber
       );
 
-      const generatedDocUrl = savedPdf.downloadUrl;
+      const generatedDocUrl = generatedPdf.downloadUrl;
 
       const generatedDocument = await prisma.generatedDocument.create({
         data: {

@@ -28,10 +28,16 @@ class FileCleanupWorker {
         return;
       }
 
-      // Delete from S3
+      // Delete PDF from S3
       if (template.s3_key) {
         await s3Service.deleteFile(template.s3_key);
         console.log(`✅ Deleted from S3: ${template.s3_key}`);
+      }
+
+      // Delete companion JSON elements file if present
+      if (template.extracted_text?.endsWith('-elements.json')) {
+        await s3Service.deleteFile(template.extracted_text).catch(() => {});
+        console.log(`✅ Deleted elements JSON from S3: ${template.extracted_text}`);
       }
 
       // Delete from database
@@ -69,9 +75,14 @@ class FileCleanupWorker {
 
       for (const template of expiredTemplates) {
         try {
-          // Delete from S3
+          // Delete PDF from S3
           if (template.s3_key) {
             await s3Service.deleteFile(template.s3_key);
+          }
+
+          // Delete companion JSON elements file if present
+          if (template.extracted_text?.endsWith('-elements.json')) {
+            await s3Service.deleteFile(template.extracted_text).catch(() => {});
           }
 
           // Delete from database

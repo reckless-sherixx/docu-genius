@@ -14,4 +14,9 @@ router.delete('/:id', authMiddleware, (req, res) =>
   generatedDocumentController.deleteGeneratedDocument(req, res)
 );
 
+// Email a generated document to a candidate
+router.post('/:id/email', authMiddleware, (req, res) =>
+  generatedDocumentController.emailDocument(req, res)
+);
+
 export default router;

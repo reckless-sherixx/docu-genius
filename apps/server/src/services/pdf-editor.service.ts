@@ -1,14 +1,17 @@
 import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
-import { PDFDocument, rgb, StandardFonts, degrees, PDFPage } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees, PDFPage, PDFFont } from 'pdf-lib';
 import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
+import { tesseractPool } from '../lib/tesseract-pool.js';
 import { fileCleanupQueue } from '../queues/file-cleanup.queue.js';
 import { createRequire } from 'module';
 import { pdf } from 'pdf-to-img';
 import { NlpService, ExtractedEntity } from './nlp.service.js';
 
 const require = createRequire(import.meta.url);
+
+// Reusable font cache per PDF document build
+type FontCache = Map<string, PDFFont>;
 
 export class PDFEditorService {
 
@@ -97,14 +100,16 @@ export class PDFEditorService {
                     const images = await this.convertPDFToImages(originalBuffer, 2);
                     console.log(`📸 Converted ${images.length} pages to images`);
                     
-                    for (const img of images) {
-                        const metadata = await sharp(img).metadata();
+                    // Get image metadata in parallel
+                    const metadataPromises = images.map(img => sharp(img).metadata());
+                    const metadataResults = await Promise.all(metadataPromises);
+                    for (const metadata of metadataResults) {
                         imageScales.push({ width: metadata.width || 1, height: metadata.height || 1 });
-                        console.log(`📐 Image size: ${metadata.width}x${metadata.height}`);
                     }
                     
                     console.log('🔤 Running OCR with positions on images...');
-                    const ocrResult = await this.performOCROnPDFWithPositions(originalBuffer, originalPages.length);
+                    // Pass pre-converted images to avoid re-converting
+                    const ocrResult = await this.performOCROnPDFWithPositions(originalBuffer, originalPages.length, images);
                     extractedText = ocrResult.fullText;
                     ocrTextLines = ocrResult.lines;
                     usedOCR = true;
@@ -334,52 +339,52 @@ export class PDFEditorService {
     }
 
     /**
-     * Perform OCR on a PDF by converting pages to images first
+     * Preprocess image for OCR (shared pipeline)
+     */
+    private async preprocessForOCR(imageBuffer: Buffer): Promise<Buffer> {
+        return sharp(imageBuffer)
+            .greyscale()
+            .normalize()
+            .modulate({ brightness: 1.1 })
+            .sharpen({ sigma: 2, m1: 1, m2: 0.5 })
+            .gamma(1.2)
+            .toBuffer();
+    }
+
+    /**
+     * Perform OCR on a PDF by converting pages to images first.
+     * Uses the shared Tesseract worker pool and processes pages in parallel.
      */
     private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
         console.log(`🔤 Running OCR on PDF pages...`);
         
         try {
-            // Convert all PDF pages to images
             console.log(`📄 Converting PDF pages to images...`);
-            const images = await this.convertPDFToImages(buffer, 3); // Higher scale for better OCR
+            const images = await this.convertPDFToImages(buffer, 2); // scale 2 is sufficient for OCR
             const numPages = images.length;
-            
             console.log(`✅ Converted ${numPages} pages to images`);
             
-            const worker = await createWorker('eng', 1, {
-                langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
-                gzip: false,
-            });
-            let fullText = '';
-            await worker.setParameters({
-                preserve_interword_spaces: '1',
-            });
+            // Preprocess all images in parallel
+            const preprocessPromises = images
+                .filter((img): img is Buffer => !!img)
+                .map(img => this.preprocessForOCR(img));
+            const preprocessed = await Promise.all(preprocessPromises);
             
-            try {
-                for (let i = 0; i < numPages; i++) {
-                    const imageBuffer = images[i];
-                    if (!imageBuffer) continue;
+            // Process pages in parallel using the worker pool
+            const pageTexts = await Promise.all(
+                preprocessed.map(async (ppBuffer, i) => {
+                    const worker = await tesseractPool.acquire();
+                    try {
+                        console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
+                        const { data: { text } } = await worker.recognize(ppBuffer);
+                        return this.cleanOCRText(text);
+                    } finally {
+                        tesseractPool.release(worker);
+                    }
+                })
+            );
             
-                    const preprocessedBuffer = await sharp(imageBuffer)
-                        .greyscale()                              // Convert to grayscale
-                        .normalize()                              // Auto-level contrast
-                        .modulate({ brightness: 1.1 })            // Slightly brighten
-                        .sharpen({ sigma: 2, m1: 1, m2: 0.5 })    // Sharpen text edges
-                        .gamma(1.2)                               // Adjust gamma for better contrast
-                        .toBuffer();
-                    
-                    console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
-                    const { data: { text } } = await worker.recognize(preprocessedBuffer);
-                    
-                    // Clean up common OCR errors
-                    const cleanedText = this.cleanOCRText(text);
-                    fullText += cleanedText + '\n\n--- Page Break ---\n\n';
-                }
-            } finally {
-                await worker.terminate();
-            }
-            
+            const fullText = pageTexts.join('\n\n--- Page Break ---\n\n');
             console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
             
             return this.cleanOCRText(fullText.trim());
@@ -389,94 +394,78 @@ export class PDFEditorService {
         }
     }
 
-    private async performOCROnPDFWithPositions(buffer: Buffer, pageCount: number): Promise<{
+    /**
+     * Perform OCR with position data on a single page image.
+     */
+    private async ocrPageWithPositions(
+        imageBuffer: Buffer,
+        pageIndex: number
+    ): Promise<{
+        text: string;
+        lines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}>;
+    }> {
+        const preprocessedBuffer = await this.preprocessForOCR(imageBuffer);
+        const worker = await tesseractPool.acquire();
+        try {
+            const result = await worker.recognize(preprocessedBuffer);
+            const data = result.data as any;
+            const lines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}> = [];
+
+            if (data.lines && Array.isArray(data.lines)) {
+                for (const line of data.lines) {
+                    if (line.text.trim().length === 0) continue;
+                    const bbox = line.bbox;
+                    const lineHeight = bbox.y1 - bbox.y0;
+                    lines.push({
+                        text: line.text.trim(),
+                        pageIndex,
+                        x: bbox.x0,
+                        y: bbox.y0,
+                        width: bbox.x1 - bbox.x0,
+                        height: lineHeight,
+                        fontSize: Math.max(8, Math.min(24, lineHeight * 0.7)),
+                    });
+                }
+            }
+            return { text: data.text || '', lines };
+        } finally {
+            tesseractPool.release(worker);
+        }
+    }
+
+    /**
+     * Perform OCR with positions on all PDF pages in parallel.
+     * Accepts optional pre-converted images to avoid re-converting.
+     */
+    private async performOCROnPDFWithPositions(
+        buffer: Buffer,
+        pageCount: number,
+        preConvertedImages?: Buffer[]
+    ): Promise<{
         fullText: string;
         lines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}>;
     }> {
         console.log(`🔤 Running OCR with positions on PDF pages...`);
         
         try {
-            // Convert all PDF pages to images at higher resolution for better OCR
-            console.log(`📄 Converting PDF pages to images for OCR...`);
-            const images = await this.convertPDFToImages(buffer, 3); // Scale 3 = 300 DPI equivalent
+            const images = preConvertedImages ?? await this.convertPDFToImages(buffer, 2);
             const numPages = images.length;
+            console.log(`✅ Processing ${numPages} pages for OCR`);
             
-            console.log(`✅ Converted ${numPages} pages to images`);
+            // Process all pages in parallel via worker pool
+            const pageResults = await Promise.all(
+                images.map((img, i) => {
+                    if (!img) return Promise.resolve({ text: '', lines: [] as any[] });
+                    console.log(`🔍 Queuing OCR for page ${i + 1}/${numPages}...`);
+                    return this.ocrPageWithPositions(img, i);
+                })
+            );
             
-            // Use tessdata_best for higher accuracy (slower but more accurate)
-            const worker = await createWorker('eng', 1, {
-                langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
-                gzip: false,
-            });
-            let fullText = '';
-            const allLines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}> = [];
-            
-            // Set Tesseract parameters for better accuracy
-            await worker.setParameters({
-                preserve_interword_spaces: '1',  // Preserve spacing
-            });
-            
-            try {
-                for (let i = 0; i < numPages; i++) {
-                    const imageBuffer = images[i];
-                    if (!imageBuffer) continue;
-                    
-                    // Get image dimensions for scaling
-                    const imageMetadata = await sharp(imageBuffer).metadata();
-                    const imageWidth = imageMetadata.width || 1;
-                    const imageHeight = imageMetadata.height || 1;
-                    
-                    // Better preprocessing for OCR - avoid harsh binarization
-                    const preprocessedBuffer = await sharp(imageBuffer)
-                        .greyscale()                        // Convert to grayscale
-                        .normalize()                        // Auto-level contrast
-                        .modulate({ brightness: 1.1 })      // Slightly brighten
-                        .sharpen({ sigma: 2, m1: 1, m2: 0.5 }) // Sharpen text edges
-                        .gamma(1.2)                         // Adjust gamma for better contrast
-                        .toBuffer();
-                    
-                    console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
-                    const result = await worker.recognize(preprocessedBuffer);
-                    const data = result.data as any;
-                    
-                    console.log(`📊 Tesseract data keys: ${Object.keys(data).join(', ')}`);
-                    console.log(`📊 data.lines exists: ${!!data.lines}, is array: ${Array.isArray(data.lines)}, length: ${data.lines?.length || 0}`);
-                    
-                    // Extract lines with bounding box positions
-                    if (data.lines && Array.isArray(data.lines)) {
-                        console.log(`📝 Processing ${data.lines.length} lines from page ${i + 1}`);
-                        for (const line of data.lines) {
-                            if (line.text.trim().length === 0) continue;
-                            
-                            const bbox = line.bbox;
-                            console.log(`   Line: "${line.text.substring(0, 30)}..." bbox: ${JSON.stringify(bbox)}`);
-                            // Calculate approximate font size from line height
-                            const lineHeight = bbox.y1 - bbox.y0;
-                            const fontSize = Math.max(8, Math.min(24, lineHeight * 0.7));
-                            
-                            allLines.push({
-                                text: line.text.trim(),
-                                pageIndex: i,
-                                x: bbox.x0,
-                                y: bbox.y0,
-                                width: bbox.x1 - bbox.x0,
-                                height: lineHeight,
-                                fontSize: fontSize,
-                            });
-                        }
-                    } else {
-                        console.log(`⚠️ No lines array found in Tesseract result for page ${i + 1}`);
-                    }
-                    
-                    fullText += data.text + '\n\n';
-                }
-            } finally {
-                await worker.terminate();
-            }
+            const allLines = pageResults.flatMap(r => r.lines);
+            const fullText = pageResults.map(r => r.text).join('\n\n');
             
             console.log(`✅ OCR completed, extracted ${allLines.length} positioned lines from ${numPages} pages`);
             
-            // Clean the text and also clean each line
             const cleanedLines = allLines.map(line => ({
                 ...line,
                 text: this.cleanOCRText(line.text)
@@ -490,41 +479,59 @@ export class PDFEditorService {
     }
 
     /**
-     * Perform OCR on an image buffer using Tesseract
+     * Perform OCR on an image buffer using Tesseract (uses worker pool)
      */
     private async performOCR(buffer: Buffer): Promise<string> {
-        console.log('🔤 Running OCR with Tesseract (tessdata_best)...');
+        console.log('🔤 Running OCR with Tesseract (pooled worker)...');
 
-        // Use tessdata_best for higher accuracy
-        const worker = await createWorker('eng', 1, {
-            langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main',
-            gzip: false,
-        });
+        const preprocessedBuffer = await this.preprocessForOCR(buffer);
+        const worker = await tesseractPool.acquire();
 
         try {
-            // Preprocess with Sharp for better OCR accuracy
-            // Avoid harsh binarization which causes character misrecognition
-            const preprocessedBuffer = await sharp(buffer)
-                .greyscale()                              // Convert to grayscale
-                .normalize()                              // Auto-level contrast
-                .modulate({ brightness: 1.1 })            // Slightly brighten
-                .sharpen({ sigma: 2, m1: 1, m2: 0.5 })    // Sharpen text edges
-                .gamma(1.2)                               // Adjust gamma
-                .toBuffer();
-
-            const {
-                data: { text },
-            } = await worker.recognize(preprocessedBuffer);
-
+            const { data: { text } } = await worker.recognize(preprocessedBuffer);
             console.log(`✅ OCR completed, extracted ${text.length} characters`);
-
             return this.cleanOCRText(text);
         } catch (error) {
             console.error('❌ OCR failed:', error);
             throw new Error('OCR processing failed');
         } finally {
-            await worker.terminate();
+            tesseractPool.release(worker);
         }
+    }
+
+    /**
+     * Clean up previous temporary templates for the same parent template.
+     * Deletes both S3 files and DB records to prevent orphaned files.
+     */
+    private async cleanupOldTempTemplates(parentTemplateId: string): Promise<void> {
+        const oldTempTemplates = await prisma.template.findMany({
+            where: {
+                parent_template_id: parentTemplateId,
+                is_temporary: true,
+            },
+        });
+
+        if (oldTempTemplates.length === 0) return;
+
+        await Promise.all(
+            oldTempTemplates.map(async (oldTemplate) => {
+                try {
+                    const deletePromises: Promise<void>[] = [];
+                    if (oldTemplate.s3_key) {
+                        deletePromises.push(s3Service.deleteFile(oldTemplate.s3_key));
+                    }
+                    // Also delete the companion JSON elements file if present
+                    if (oldTemplate.extracted_text?.endsWith('-elements.json')) {
+                        deletePromises.push(s3Service.deleteFile(oldTemplate.extracted_text));
+                    }
+                    await Promise.all(deletePromises);
+                    await prisma.template.delete({ where: { id: oldTemplate.id } });
+                } catch (cleanupErr) {
+                    console.warn(`⚠️ Failed to clean up old temp template ${oldTemplate.id}:`, cleanupErr);
+                }
+            })
+        );
+        console.log(`🧹 Cleaned up ${oldTempTemplates.length} old temporary template(s) for parent ${parentTemplateId}`);
     }
 
     /**
@@ -546,6 +553,9 @@ export class PDFEditorService {
                 throw new Error('Original template not found');
             }
 
+            // Clean up previous temporary versions before creating a new one
+            await this.cleanupOldTempTemplates(templateId);
+
             // Download original PDF
             const originalBuffer = await s3Service.downloadFileAsBuffer(originalTemplate.s3_key);
 
@@ -560,27 +570,36 @@ export class PDFEditorService {
             // Upload buffer directly to S3
             await s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf');
 
-            // Save to database with expiration (2 hours)
+            // Save to database with expiration 
             const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
-            const editedTemplate = await prisma.template.create({
-                data: {
-                    template_name: fileName,
-                    template_description: 'Edited PDF (expires in 2 hours)',
-                    s3_key: s3Key,
-                    file_size: BigInt(editedPdfBuffer.length),
-                    mime_type: 'application/pdf',
-                    status: 'COMPLETED',
-                    category: originalTemplate.category || 'GENERAL',
-                    organization_id: organizationId,
-                    is_temporary: true,
-                    expires_at: expiresAt,
-                    parent_template_id: templateId,
-                },
-            });
+            let editedTemplate;
+            try {
+                editedTemplate = await prisma.template.create({
+                    data: {
+                        template_name: fileName,
+                        template_description: 'Edited PDF (expires in 2 hours)',
+                        s3_key: s3Key,
+                        file_size: BigInt(editedPdfBuffer.length),
+                        mime_type: 'application/pdf',
+                        status: 'COMPLETED',
+                        category: originalTemplate.category || 'GENERAL',
+                        organization_id: organizationId,
+                        is_temporary: true,
+                        expires_at: expiresAt,
+                        parent_template_id: templateId,
+                    },
+                });
+            } catch (dbError) {
+                // Rollback: delete orphaned S3 file if DB write fails
+                await s3Service.deleteFile(s3Key).catch(() => {});
+                throw dbError;
+            }
 
             // Schedule deletion after 2 hours
-            await this.scheduleFileDeletion(editedTemplate.id, expiresAt);
+            this.scheduleFileDeletion(editedTemplate.id, expiresAt).catch(err =>
+                console.error('Failed to schedule file deletion:', err)
+            );
 
             return {
                 templateId: editedTemplate.id,
@@ -611,6 +630,9 @@ export class PDFEditorService {
                 throw new Error('Original template not found');
             }
 
+            // Clean up previous temporary versions before creating a new one
+            await this.cleanupOldTempTemplates(templateId);
+
             // Download original PDF
             const originalBuffer = await s3Service.downloadFileAsBuffer(originalTemplate.s3_key);
 
@@ -628,48 +650,107 @@ export class PDFEditorService {
             const s3Key = `templates/${organizationId}/edited-${timestamp}.pdf`;
             const textElementsS3Key = `templates/${organizationId}/edited-${timestamp}-elements.json`;
 
-            // Upload PDF buffer to S3
-            await s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf');
-
             const elementsJson = JSON.stringify({
                 textElements,
                 imageElements,
                 deletedElements,
                 savedAt: new Date().toISOString(),
             });
-            await s3Service.uploadFile(textElementsS3Key, Buffer.from(elementsJson), 'application/json');
+
+            // Upload both files to S3 in parallel
+            await Promise.all([
+                s3Service.uploadFile(s3Key, editedPdfBuffer, 'application/pdf'),
+                s3Service.uploadFile(textElementsS3Key, Buffer.from(elementsJson), 'application/json'),
+            ]);
 
             const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
-            const editedTemplate = await prisma.template.create({
-                data: {
-                    template_name: fileName,
-                    template_description: 'Edited PDF (expires in 2 hours)',
-                    s3_key: s3Key,
-                    file_size: BigInt(editedPdfBuffer.length),
-                    mime_type: 'application/pdf',
-                    status: 'COMPLETED',
-                    category: originalTemplate.category || 'GENERAL',
-                    organization_id: organizationId,
-                    is_temporary: true,
-                    expires_at: expiresAt,
-                    parent_template_id: templateId,
-                    extracted_text: textElementsS3Key,
-                },
-            });
+            let editedTemplate;
+            let downloadUrl: string;
+            try {
+                // Create DB record and generate presigned URL in parallel
+                [editedTemplate, downloadUrl] = await Promise.all([
+                    prisma.template.create({
+                        data: {
+                            template_name: fileName,
+                            template_description: 'Edited PDF (expires in 2 hours)',
+                            s3_key: s3Key,
+                            file_size: BigInt(editedPdfBuffer.length),
+                            mime_type: 'application/pdf',
+                            status: 'COMPLETED',
+                            category: originalTemplate.category || 'GENERAL',
+                            organization_id: organizationId,
+                            is_temporary: true,
+                            expires_at: expiresAt,
+                            parent_template_id: templateId,
+                            extracted_text: textElementsS3Key,
+                        },
+                    }),
+                    s3Service.generatePresignedDownloadUrl(s3Key, 7200),
+                ]);
+            } catch (dbError) {
+                // Rollback: delete orphaned S3 files if DB write fails
+                await Promise.all([
+                    s3Service.deleteFile(s3Key).catch(() => {}),
+                    s3Service.deleteFile(textElementsS3Key).catch(() => {}),
+                ]);
+                throw dbError;
+            }
 
-            // Schedule deletion after 2 hours
-            await this.scheduleFileDeletion(editedTemplate.id, expiresAt);
+            // Schedule deletion after 2 hours (fire and forget)
+            this.scheduleFileDeletion(editedTemplate.id, expiresAt).catch(err =>
+                console.error('Failed to schedule file deletion:', err)
+            );
 
             return {
                 templateId: editedTemplate.id,
-                downloadUrl: await s3Service.generatePresignedDownloadUrl(s3Key, 7200),
+                downloadUrl,
                 expiresAt,
             };
         } catch (error) {
             console.error('❌ Error saving editable PDF:', error);
             throw error;
         }
+    }
+
+    /**
+     * Generate a document PDF and upload directly to S3.
+     * Unlike saveEditablePDF, this does NOT create a temporary template record,
+     * avoiding unnecessary DB rows and extra S3 files (JSON elements).
+     */
+    async generateDocumentPDF(
+        templateId: string,
+        textElements: any[],
+        organizationId: string,
+        imageElements: any[] = [],
+        documentNumber: string
+    ): Promise<{ s3Key: string; downloadUrl: string }> {
+        const originalTemplate = await prisma.template.findUnique({
+            where: { id: templateId },
+        });
+
+        if (!originalTemplate || !originalTemplate.s3_key) {
+            throw new Error('Original template not found');
+        }
+
+        // Download and rebuild PDF
+        const originalBuffer = await s3Service.downloadFileAsBuffer(originalTemplate.s3_key);
+        const pdfBuffer = await this.rebuildPDFWithTextAndImages(
+            originalBuffer,
+            textElements,
+            [],
+            imageElements,
+            documentNumber
+        );
+
+        // Upload to a dedicated generated-documents path (no temp template needed)
+        const safeDocNum = documentNumber.replace('#', '');
+        const s3Key = `generated-documents/${organizationId}/${safeDocNum}-${Date.now()}.pdf`;
+        await s3Service.uploadFile(s3Key, pdfBuffer, 'application/pdf');
+
+        const downloadUrl = await s3Service.generatePresignedDownloadUrl(s3Key, 7200);
+
+        return { s3Key, downloadUrl };
     }
 
     private async rebuildPDFWithText(
@@ -684,6 +765,7 @@ export class PDFEditorService {
             
             // Create new PDF document
             const newPdfDoc = await PDFDocument.create();
+            const fontCache: FontCache = new Map();
 
             // Process each page
             for (let pageNum = 1; pageNum <= originalPages.length; pageNum++) {
@@ -755,7 +837,7 @@ export class PDFEditorService {
 
                 // Draw new text on top
                 for (const element of activeElements) {
-                    await this.addTextElement(newPdfDoc, newPage, element);
+                    await this.addTextElement(newPdfDoc, newPage, element, fontCache);
                 }
             }
 
@@ -783,9 +865,10 @@ export class PDFEditorService {
             
             // Create new PDF document
             const newPdfDoc = await PDFDocument.create();
+            const fontCache: FontCache = new Map();
 
-            // Embed font for document number
-            const helveticaFont = await newPdfDoc.embedFont(StandardFonts.Helvetica);
+            // Embed font for document number (uses cache)
+            const helveticaFont = await this.getCachedFont(newPdfDoc, fontCache, 'helvetica', false, false);
 
             // Process each page
             for (let pageNum = 1; pageNum <= originalPages.length; pageNum++) {
@@ -858,7 +941,7 @@ export class PDFEditorService {
 
                 // Draw new text on top
                 for (const element of activeTextElements) {
-                    await this.addTextElement(newPdfDoc, newPage, element);
+                    await this.addTextElement(newPdfDoc, newPage, element, fontCache);
                 }
 
                 // Draw images/signatures on this page
@@ -951,46 +1034,42 @@ export class PDFEditorService {
     }
 
 
-    private async addTextElement(pdfDoc: PDFDocument, page: PDFPage, element: any): Promise<void> {
+    /**
+     * Get or create a cached font for a PDF document.
+     */
+    private async getCachedFont(pdfDoc: PDFDocument, fontCache: FontCache, fontFamily: string, isBold: boolean, isItalic: boolean): Promise<PDFFont> {
+        const key = `${fontFamily}-${isBold ? 'b' : ''}-${isItalic ? 'i' : ''}`;
+        let font = fontCache.get(key);
+        if (font) return font;
+
+        if (fontFamily.includes('times')) {
+            if (isBold && isItalic) font = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+            else if (isBold) font = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+            else if (isItalic) font = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+            else font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+        } else if (fontFamily.includes('courier')) {
+            if (isBold && isItalic) font = await pdfDoc.embedFont(StandardFonts.CourierBoldOblique);
+            else if (isBold) font = await pdfDoc.embedFont(StandardFonts.CourierBold);
+            else if (isItalic) font = await pdfDoc.embedFont(StandardFonts.CourierOblique);
+            else font = await pdfDoc.embedFont(StandardFonts.Courier);
+        } else {
+            if (isBold && isItalic) font = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+            else if (isBold) font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            else if (isItalic) font = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+            else font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        }
+
+        fontCache.set(key, font);
+        return font;
+    }
+
+    private async addTextElement(pdfDoc: PDFDocument, page: PDFPage, element: any, fontCache?: FontCache): Promise<void> {
         try {
-            let font: any;
             const fontFamily = element.fontFamily?.toLowerCase() || 'arial';
             const isBold = element.isBold === true;
             const isItalic = element.isItalic === true;
-            
-           
-            if (fontFamily.includes('times')) {
-                if (isBold && isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
-                } else if (isBold) {
-                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-                } else if (isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-                } else {
-                    font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-                }
-            } else if (fontFamily.includes('courier')) {
-                if (isBold && isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.CourierBoldOblique);
-                } else if (isBold) {
-                    font = await pdfDoc.embedFont(StandardFonts.CourierBold);
-                } else if (isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.CourierOblique);
-                } else {
-                    font = await pdfDoc.embedFont(StandardFonts.Courier);
-                }
-            } else {
-                // Default to Helvetica (Arial equivalent)
-                if (isBold && isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
-                } else if (isBold) {
-                    font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-                } else if (isItalic) {
-                    font = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-                } else {
-                    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-                }
-            }
+            const cache = fontCache ?? new Map<string, PDFFont>();
+            const font = await this.getCachedFont(pdfDoc, cache, fontFamily, isBold, isItalic);
             
             const fontSize = element.fontSize / 2;
             const color = this.hexToRgb(element.color || '#000000');

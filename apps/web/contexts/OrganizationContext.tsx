@@ -7,6 +7,7 @@ export interface Organization {
   id: string;
   name: string;
   description?: string;
+  role?: 'ADMIN' | 'CREATOR';
 }
 
 interface OrganizationContextType {
