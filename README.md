@@ -1,16 +1,14 @@
 # DocuGenius
 
-**DocuGenius** is a Document Generation & Management Platform that streamlines the creation, customization, validation, and tracking of organizational documents — such as agreements, offer letters, and NDAs — using PDF templates and centralized data entry.
+**DocuGenius** is a Document Generation & Management Platform that streamlines the creation, customization, and tracking of organizational documents — such as agreements, offer letters, and NDAs — using PDF templates and centralized data entry.
 
-Users upload a company-branded PDF template, enter relevant personal and role-specific data, review and correct language via integrated proofreading, and generate final documents on official letterhead secured by audit logging and QR-code verification.
+Users upload a company-branded PDF template, define fillable fields via a canvas-based editor, generate completed documents through a PIN-authenticated workflow, and share or verify them securely.
 
 ---
 
 ## Table of Contents
 
-- [Key Benefits](#key-benefits)
-- [Feature Breakdown](#feature-breakdown)
-- [User Flows](#user-flows)
+- [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Monorepo Structure](#monorepo-structure)
 - [Data Models](#data-models)
@@ -22,113 +20,53 @@ Users upload a company-branded PDF template, enter relevant personal and role-sp
 
 ---
 
-## Key Benefits
+## Features
 
-| Benefit | Description |
-|---------|-------------|
-| **Speed & Consistency** | Populate any template with centralized inputs to eliminate manual editing |
-| **Error Reduction** | Built-in grammar, style, and tense checking with one-click fixes |
-| **Brand Control** | Automatic application of corporate letterhead and serial numbering |
-| **Auditability** | Track every generated document by user, reason, timestamp, and PIN |
-| **Security & Verification** | Encrypt data at rest, enforce RBAC, and embed QR codes for real-time validity checks |
+### Template Management
+- Upload PDF files (direct upload or presigned S3 URL flow)
+- Automatic OCR processing via Tesseract.js to extract text from scanned PDFs
+- Background queue processing (BullMQ + Redis) with real-time status updates via Socket.IO
+- Classify templates by category: `GENERAL`, `LEGAL`, `FINANCE`, `HR`, `MARKETING`, `SALES`, `OTHER`
+- Template approval workflow — admins approve templates before they are available for use
+- Support for `TEXT_PDF`, `SCANNED_PDF`, and `IMAGE` template types
 
----
+### PDF Field Editor
+- Canvas-based editor (Fabric.js) to visually position and configure form fields on PDFs
+- Add and place text fields, image overlays, and signature fields
+- Text highlighting support
+- Save field configurations permanently to a template or as an editable draft
+- Field types: `TEXT`, `DATE`, `NUMBER`, `EMAIL`, `PHONE`, `ADDRESS`, `SIGNATURE`, `CUSTOM`
 
-## Feature Breakdown
+### Document Generation
+- Generate filled documents from approved templates via the PDF editor
+- Rate-limited generation endpoint to prevent abuse
+- PIN authentication required before finalizing a document (`document_generation_pin` per user)
+- Generated documents stored in AWS S3 with unique document numbers
 
-### 2.1 Template Management
+### Generated Document Management
+- List all generated documents scoped to an organization
+- Delete documents (removes from S3 and database)
+- Email documents to recipients with a custom subject, message body, and a 24-hour presigned S3 download link
+- Only the document generator or an org `ADMIN` can email a document
 
-**PDF Upload & Validation**
-- Support PDF files up to 10 MB, A4/Letter sizes; reject password-protected or corrupted files
-- Validate file type and size before processing
+### Document Verification
+- Public verification endpoint — no authentication required
+- Look up any document by its unique document number
+- Rate-limited: 30 requests per 15 minutes per IP
 
-**Placeholder Detection & Tagging**
-- Automatically extract text placeholders (e.g., `{{Name}}`, `{{Date}}`) using PDF-Lib OCR and Tesseract.js
-- Provide manual tagging interface for templates with non-standard layouts or embedded graphics
-- Classify document type via dropdown (Agreement, Offer Letter, NDA, Custom)
+### Organizations & Role-Based Access Control
+- Create organizations with a PIN and description
+- Join an existing organization using the organization PIN
+- Two roles per organization: `ADMIN` and `CREATOR`
+  - `ADMIN` — full access including template upload, creation logs, member management
+  - `CREATOR` — can generate documents; cannot upload templates or view creation logs
+- Manage members: view, update roles, remove members
 
-**Version Control**
-- Maintain template versions; allow rollback or comparison diff of placeholder changes
-
----
-
-### 2.2 Dynamic Data Entry
-
-**Form Generation**
-- Generate dynamic forms from detected placeholders:
-  - Text inputs (e.g., Name, Role, Start Date)
-  - Pronoun selector with "he/him", "she/her", "they/them", plus custom option
-  - Date pickers and dropdowns for standardized fields (e.g., Department)
-
-**Conditional Logic & Validation**
-- If pronoun = "she/her", set all possessive placeholders to "her"
-- Validation rules (required, regex, max length) enforced in real time via Yup
-- Skip optional fields; highlight missing required fields before merge
-
----
-
-### 2.3 Proofreading & Language Correction
-
-**Integration with LanguageTool API**
-- Upon data merge, send draft text to LanguageTool for grammar, spelling, punctuation, and tense analysis
-- Display inline suggestions in UI with "Accept" or "Ignore" options per error
-- Offer "Accept All" for bulk correction
-
-**Multi-Dialect Support**
-- Allow users to select English variant (US, UK, Australian) for region-specific rules
-
-**Change Tracking**
-- Log all accepted corrections; allow export of before/after comparison report for compliance audits
-
----
-
-### 2.4 Letterhead Application & Audit Logging
-
-**Letterhead Overlay**
-- Apply predefined header and footer graphics from company letterhead repository
-- Ensure DPI and color profiles maintain print quality
-
-**Serial Number Assignment**
-- Generate serial in format `YYYYMMDD-XXXX` (sequential per day)
-- Display next available serial; lock after assignment
-
-**User PIN Authentication**
-- Prompt user to enter personal 4-digit PIN before final generation
-- Lock account generation ability after three incorrect attempts; auto-unlock after 15 minutes
-
-**Comprehensive Audit Log**
-- Record `userId`, timestamp, document type, template version, serial number, and generation reason
-- Expose audit entries via admin panel with filtering (by user, date, doc type)
-
----
-
-### 2.5 QR-Code Verification & Document Invalidation
-
-**QR-Code Embedding**
-- Generate unique token per document; embed QR code in document footer
-- QR directs to verification URL `/verify?token=<token>`
-
-**Verification Service**
-- `GET /api/verify?token=<token>` returns `{ status, issuedBy, date, remarks }`
-- Display validation page showing "Valid" or "Invalid" with metadata and remarks
-
-**Invalidate Document**
-- Admin can `POST /api/invalidate` with `{ token, remark }`, changing status to "invalid"
-- Invalidation logs user, timestamp, and reason; notifies issuer via email
-
----
-
-## User Flows
-
-| Step | Success Path | Edge Cases & Handling |
-|------|-------------|----------------------|
-| 1. Upload Template | Admin uploads valid PDF → placeholders extracted → template saved | File too large/invalid → display error; manual tagging fallback |
-| 2. Enter Data | Dynamic form generated → user fills required fields → validation passes | Missing required field → block next; invalid date format → inline error |
-| 3. Merge & Proofread | System merges data → draft PDF displayed → grammar errors highlighted | API timeout → fallback to manual review; unsupported language → disable suggestions |
-| 4. Apply Letterhead | User confirms draft → enters PIN → letterhead & serial applied | PIN incorrect thrice → lock generation; letterhead asset missing → use default header |
-| 5. Finalize & Download | Final PDF with QR & metadata downloads; audit log entry created | Storage failure → retry logic; network error → alert user |
-| 6. Verify Document | Third-party scans QR → verification page shows valid status | Invalid token → show "Not Found"; document invalidated → show "Invalid" with remark |
-| 7. Invalidate Document | Admin invalidates via panel → status updated → issuer notified | Concurrent invalidation → idempotent update; missing token → error message |
+### Authentication
+- Email/password registration with email verification flow
+- JWT-based session authentication
+- Password reset via email token
+- Secure bcrypt password hashing
 
 ---
 
@@ -233,48 +171,98 @@ docu-genius/
 ## Data Models
 
 ### User
-- Email/password auth with email verification and password reset
-- Optional `document_generation_pin` for protected document generation
+- Email/password authentication with email verification and password reset
+- Optional `document_generation_pin` for PIN-authenticated document generation
 
 ### Organization
-- Has an owner (`organization_head`), a PIN, and many members
-- Members have a `MemberRole`: `ADMIN` or `CREATOR`
+- Has an owner (`organization_head`), a numeric PIN for joining, and a description
+- Members are linked via `OrganizationMember` with a `MemberRole`
+
+### OrganizationMember
+- Links a user to an organization with a role: `ADMIN` or `CREATOR`
+- Unique constraint on `(organization_id, user_id)`
 
 ### Template
-- Uploaded PDF stored in S3
+- Uploaded PDF stored in S3 (`s3_key`, `s3_url`)
 - Status lifecycle: `UPLOADING` → `PROCESSING` → `READY` → `COMPLETED` / `FAILED`
 - Types: `TEXT_PDF`, `SCANNED_PDF`, `IMAGE`
 - Categories: `GENERAL`, `LEGAL`, `FINANCE`, `HR`, `MARKETING`, `SALES`, `OTHER`
-- Supports temporary templates with expiry
+- Stores extracted OCR text, page count, and processing timestamps
+- Supports temporary templates with expiry (`is_temporary`, `expires_at`)
+- Approval tracking: `is_approved`, `approved_by`, `approved_at`
 
 ### TemplateField
-- Defines a form field on a template
+- A form field positioned on a template canvas
 - Types: `TEXT`, `DATE`, `NUMBER`, `EMAIL`, `PHONE`, `ADDRESS`, `SIGNATURE`, `CUSTOM`
-- Stores canvas position data as JSON
+- Stores canvas position and size as JSON (`position_data`)
 
 ### GeneratedDocument
 - A filled instance of a template, stored in S3
 - Linked to the generating user and organization
-- Has a unique `document_number` for public verification
-
-### OrganizationInvite
-- Token-based invitation with expiry and status: `PENDING`, `ACCEPTED`, `DECLINED`, `EXPIRED`
+- Unique `document_number` used for public verification
 
 ---
 
 ## API Routes
 
-All routes are prefixed as shown. Authentication is required unless noted.
+All routes require JWT authentication unless noted.
 
+### Auth — `/api/auth/*`
 | Method | Path | Description |
 |--------|------|-------------|
-| `*` | `/api/auth/*` | next-auth authentication endpoints |
-| `*` | `/api/v1/organization/*` | Organization CRUD, members, invitations |
-| `*` | `/api/templates/*` | Template upload, processing, field management |
-| `*` | `/api/pdf-editor/*` | Canvas-based PDF field editor |
-| `*` | `/api/generated-documents/*` | Document generation, listing, deletion |
-| `POST` | `/api/generated-documents/:id/email` | Email a generated document |
-| `GET` | `/verification/:documentNumber` | Public document verification (rate-limited: 30 req / 15 min) |
+| `POST` | `/api/auth/register` | Register a new user |
+| `POST` | `/api/auth/login` | Login and receive JWT |
+| `POST` | `/api/auth/verify-email` | Verify email address |
+| `POST` | `/api/auth/forgot-password` | Request password reset email |
+| `POST` | `/api/auth/reset-password` | Reset password via token |
+
+### Organizations — `/api/v1/organization`
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/organization` | Get all organizations for the current user |
+| `POST` | `/api/v1/organization` | Create a new organization |
+| `POST` | `/api/v1/organization/join` | Join an organization via PIN |
+| `GET` | `/api/v1/organization/:id/members` | List members of an organization |
+| `PATCH` | `/api/v1/organization/:id/members/:memberId/role` | Update a member's role |
+| `DELETE` | `/api/v1/organization/:id/members/:memberId` | Remove a member |
+
+### Templates — `/api/templates`
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/templates/upload` | Direct PDF upload (multipart) |
+| `POST` | `/api/templates/presigned-url` | Get presigned S3 URL for upload |
+| `POST` | `/api/templates/confirm-upload` | Confirm presigned upload and start processing |
+| `GET` | `/api/templates` | List templates for an organization |
+| `GET` | `/api/templates/:id` | Get a single template |
+| `PUT` | `/api/templates/:id/approve` | Approve a template (ADMIN only) |
+| `DELETE` | `/api/templates/:id` | Delete a template |
+
+### PDF Editor — `/api/pdf-editor`
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/pdf-editor/:id/open` | Open a template for editing |
+| `GET` | `/api/pdf-editor/:id/download` | Download an edited PDF |
+| `POST` | `/api/pdf-editor/save` | Save canvas edits |
+| `POST` | `/api/pdf-editor/prepare-editable` | Prepare an editable copy of a template |
+| `POST` | `/api/pdf-editor/save-editable` | Save an editable copy |
+| `POST` | `/api/pdf-editor/add-text` | Add a text element to the PDF |
+| `POST` | `/api/pdf-editor/add-image` | Add an image element |
+| `POST` | `/api/pdf-editor/add-signature` | Add a signature element |
+| `POST` | `/api/pdf-editor/highlight` | Highlight text in the PDF |
+| `POST` | `/api/pdf-editor/save-permanent` | Permanently save template with field config |
+| `POST` | `/api/pdf-editor/generate-document` | Generate a filled document (rate-limited) |
+
+### Generated Documents — `/api/generated-documents`
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/generated-documents/:organizationId` | List all documents for an organization |
+| `DELETE` | `/api/generated-documents/:id` | Delete a generated document |
+| `POST` | `/api/generated-documents/:id/email` | Email a document with custom subject and body |
+
+### Verification — `/verification` (public)
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/verification/:documentNumber` | Verify a document by its number (30 req / 15 min) |
 
 ---
 
