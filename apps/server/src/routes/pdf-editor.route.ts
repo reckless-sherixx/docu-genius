@@ -29,22 +29,6 @@ router.post('/save-editable', authMiddleware, (req, res) =>
   pdfEditorController.saveEditablePDF(req, res)
 );
 
-router.post('/add-text', authMiddleware, (req, res) =>
-  pdfEditorController.addText(req, res)
-);
-
-router.post('/add-image', authMiddleware, (req, res) =>
-  pdfEditorController.addImage(req, res)
-);
-
-router.post('/add-signature', authMiddleware, (req, res) =>
-  pdfEditorController.addSignature(req, res)
-);
-
-router.post('/highlight', authMiddleware, (req, res) =>
-  pdfEditorController.highlightText(req, res)
-);
-
 router.post('/save-permanent', authMiddleware, (req, res) =>
   pdfEditorController.savePermanentTemplate(req, res)
 );
