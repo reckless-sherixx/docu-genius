@@ -29,8 +29,6 @@ class TemplateProcessor {
   async processTemplate(job: Job<TemplateProcessJob>): Promise<void> {
     const { templateId, s3Key, fileName, mimeType } = job.data;
 
-    console.log(`🚀 Starting template processing: ${templateId}`);
-
     try {
       // First check if template exists
       const existingTemplate = await prisma.template.findUnique({
@@ -50,12 +48,9 @@ class TemplateProcessor {
           processing_started_at: new Date(),
         },
       });
-
-      console.log(`📥 Downloading file from S3: ${s3Key}`);
       const fileBuffer = await s3Service.downloadFileAsBuffer(s3Key);
 
       const templateType = this.determineTemplateType(mimeType, fileBuffer);
-      console.log(`📄 Template type detected: ${templateType}`);
 
       let extractedText = '';
       let totalPages = 1;
@@ -72,17 +67,11 @@ class TemplateProcessor {
         extractedText = await this.extractTextFromImage(fileBuffer);
       }
 
-      console.log(`✅ Text extracted (${extractedText.length} characters)`);
-
       // Run NLP entity extraction
-      console.log(`🧠 Running NLP entity extraction...`);
       const nlpResult = await NlpService.NLPExtraction(extractedText);
-      console.log(`✅ NLP extraction complete: ${nlpResult.entities.length} entities, ${nlpResult.placeholders.length} placeholders found`);
 
       // Detect placeholders/fields
-      console.log(`🔍 Detecting placeholders...`);
       const detectedFields = this.detectPlaceholders(extractedText);
-      console.log(`✅ Detected ${detectedFields.length} fields`);
 
       // Combine NLP entities with detected fields for storage
       const nlpData = {
@@ -115,8 +104,6 @@ class TemplateProcessor {
           })),
         });
       }
-      
-      console.log(`✅ Template processing completed: ${templateId}`);
     } catch (error) {
       console.error(`❌ Template processing failed: ${templateId}`, error);
 
@@ -157,14 +144,10 @@ class TemplateProcessor {
    * Extract text from text-based PDF
    */
   private async extractTextFromPDF(buffer: Buffer): Promise<{ text: string; pages: number }> {
-    console.log('📖 Extracting text from PDF (text-based)');
-
     try {
       const pdfParse = require('pdf-parse');
       const data = await pdfParse(buffer);
-      
-      console.log(`✅ Extracted ${data.text.length} characters from ${data.numpages} pages`);
-      
+
       return {
         text: data.text,
         pages: data.numpages,
@@ -180,8 +163,6 @@ class TemplateProcessor {
    * Converts PDF pages to images first, then runs OCR on each page
    */
   private async extractTextFromScannedPDF(buffer: Buffer): Promise<{ text: string; pages: number }> {
-    console.log('🖼️ Processing scanned PDF with OCR');
-
     try {
       const pdfParse = require('pdf-parse');
       const pdfData = await pdfParse(buffer);
@@ -241,8 +222,6 @@ class TemplateProcessor {
    * Uses the shared Tesseract worker pool and processes pages in parallel.
    */
   private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
-    console.log(`🔤 Running OCR on PDF pages...`);
-    
     try {
       const images = await this.convertPDFToImages(buffer, 2);
       const numPages = images.length;
@@ -257,7 +236,6 @@ class TemplateProcessor {
         preprocessed.map(async (ppBuffer, i) => {
           const worker = await tesseractPool.acquire();
           try {
-            console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
             const { data: { text } } = await worker.recognize(ppBuffer);
             return text;
           } finally {
@@ -267,7 +245,6 @@ class TemplateProcessor {
       );
       
       const fullText = pageTexts.join('\n\n--- Page Break ---\n\n');
-      console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
       return fullText.trim();
     } catch (error) {
       console.error('❌ PDF OCR failed:', error);
@@ -279,14 +256,11 @@ class TemplateProcessor {
    * Perform OCR on an image buffer using Tesseract 
    */
   private async performOCR(buffer: Buffer): Promise<string> {
-    console.log('🔤 Running OCR with Tesseract (pooled)...');
-    
     const preprocessedBuffer = await this.preprocessForOCR(buffer);
     const worker = await tesseractPool.acquire();
     
     try {
       const { data: { text } } = await worker.recognize(preprocessedBuffer);
-      console.log(`✅ OCR completed, extracted ${text.length} characters`);
       return text;
     } catch (error) {
       console.error('❌ OCR failed:', error);
@@ -300,8 +274,6 @@ class TemplateProcessor {
    * Extract text from image using OCR
    */
   private async extractTextFromImage(buffer: Buffer): Promise<string> {
-    console.log('📷 Processing image with OCR');
-
     try {
       return await this.performOCR(buffer);
     } catch (error) {
@@ -421,11 +393,8 @@ export const templateProcessingWorker = new Worker(
 );
 
 templateProcessingWorker.on('completed', (job) => {
-  console.log(`✅ Job completed: ${job.id}`);
 });
 
 templateProcessingWorker.on('failed', (job, err) => {
   console.error(`❌ Job failed: ${job?.id}`, err);
 });
-
-console.log('👷 Template processing worker started');

@@ -25,18 +25,9 @@ export class TemplateController {
                 });
             }
 
-            console.log('📤 Direct upload received:', {
-                fileName: file.originalname,
-                fileSize: file.size,
-                mimeType: file.mimetype,
-                organizationId,
-            });
-
             // Upload to S3
             const s3Key = `templates/${organizationId}/${Date.now()}-${file.originalname}`;
             await s3Service.uploadFile(s3Key, file.buffer, file.mimetype);
-
-            console.log('✅ File uploaded to S3:', s3Key);
 
             // Create template record
             const template = await prisma.template.create({
@@ -62,15 +53,12 @@ export class TemplateController {
             });
 
             // Enqueue processing job
-            console.log('📤 Enqueueing template for processing...');
             await templateQueue.add('process-template', {
                 templateId: template.id,
                 s3Key: s3Key,
                 fileName: file.originalname,
                 mimeType: file.mimetype,
             });
-
-            console.log('✅ Template created and queued:', template.id);
 
             return res.status(201).json({
                 success: true,
@@ -93,7 +81,7 @@ export class TemplateController {
     }
 
     /**
-     * Step 1: Generate pre-signed URL for upload
+       Generate pre-signed URL for upload
      */
     async generateUploadUrl(req: Request, res: Response): Promise<any> {
         try {
@@ -112,7 +100,7 @@ export class TemplateController {
             if (fileSize && fileSize > MAX_FILE_SIZE) {
                 return res.status(400).json({
                     success: false,
-                    message: 'File size exceeds maximum limit of 50MB',
+                    message: 'File size exceeds maximum limit of 10MB',
                 });
             }
 
@@ -132,13 +120,6 @@ export class TemplateController {
                     message: 'Invalid file type. Only PDF and images are allowed',
                 });
             }
-
-            console.log('🔐 Generating pre-signed URL for upload:', {
-                fileName,
-                fileType,
-                organizationId,
-                userId,
-            });
 
             // Generate pre-signed URL
             const { uploadUrl, key, expiresIn } = await s3Service.generatePresignedUploadUrl(
@@ -163,8 +144,6 @@ export class TemplateController {
                 },
             });
 
-            console.log('✅ Template created with UPLOADING status:', template.id);
-
             return res.status(200).json({
                 success: true,
                 message: 'Pre-signed URL generated successfully',
@@ -185,7 +164,7 @@ export class TemplateController {
     }
 
     /**
-     * Step 2: Confirm upload and start processing
+         Confirm upload and start processing
      */
     async confirmUpload(req: Request, res: Response): Promise<any> {
         try {
@@ -197,8 +176,6 @@ export class TemplateController {
                     message: 'templateId is required',
                 });
             }
-
-            console.log('✅ Confirming upload for template:', templateId);
 
             // Get template from database
             const template = await prisma.template.findUnique({
@@ -231,15 +208,12 @@ export class TemplateController {
             });
 
             // Enqueue processing job
-            console.log('📤 Enqueueing template for processing...');
             await templateQueue.add('process-template', {
                 templateId: template.id,
                 s3Key: template.s3_key,
                 fileName: template.template_name,
                 mimeType: template.mime_type || 'application/pdf',
             });
-
-            console.log('✅ Template enqueued for processing:', templateId);
 
             return res.status(200).json({
                 success: true,
@@ -368,8 +342,6 @@ export class TemplateController {
                 where: { id },
             });
 
-            console.log('✅ Template deleted:', id);
-
             return res.status(200).json({
                 success: true,
                 message: 'Template deleted successfully',
@@ -397,8 +369,6 @@ export class TemplateController {
                     approved_at: new Date(),
                 },
             });
-
-            console.log('✅ Template approved:', id);
 
             return res.status(200).json({
                 success: true,

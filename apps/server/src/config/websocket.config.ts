@@ -54,24 +54,19 @@ export const initializeSocketIO = (httpServer: HttpServer): Server => {
     });
 
     io.on('connection', (socket: AuthenticatedSocket) => {
-        console.log(` User connected: ${socket.userId} (Socket: ${socket.id})`);
-
         socket.on('join:organization', (organizationId: string) => {
             if (!organizationId) return;
 
             socket.join(`org:${organizationId}`);
-            console.log(` User ${socket.userId} joined organization room: org:${organizationId}`);
         });
 
         socket.on('leave:organization', (organizationId: string) => {
             if (!organizationId) return;
 
             socket.leave(`org:${organizationId}`);
-            console.log(` User ${socket.userId} left organization room: org:${organizationId}`);
         });
 
         socket.on('disconnect', (reason) => {
-            console.log(`User disconnected: ${socket.userId} (Reason: ${reason})`);
         });
 
         socket.on('error', (error) => {
@@ -79,7 +74,6 @@ export const initializeSocketIO = (httpServer: HttpServer): Server => {
         });
     });
 
-    console.log('Socket.IO initialized');
     return io;
 };
 
@@ -97,7 +91,6 @@ export const emitDocumentGenerated = (payload: DocumentGeneratedPayload) => {
     }
 
     io.to(`org:${payload.organizationId}`).emit('document:generated', payload);
-    console.log(`Emitted document:generated to org:${payload.organizationId}`);
 };
 
 export const emitMemberJoined = (payload: MemberJoinedPayload) => {
@@ -107,7 +100,6 @@ export const emitMemberJoined = (payload: MemberJoinedPayload) => {
     }
 
     io.to(`org:${payload.organizationId}`).emit('member:joined', payload);
-    console.log(`Emitted member:joined to org:${payload.organizationId}`);
 };
 
 export const emitMemberRoleUpdated = (organizationId: string, memberId: string, newRole: string, memberName: string) => {
@@ -122,7 +114,6 @@ export const emitMemberRoleUpdated = (organizationId: string, memberId: string, 
         memberName,
         organizationId,
     });
-    console.log(`Emitted member:roleUpdated to org:${organizationId}`);
 };
 
 export const emitMemberRemoved = (organizationId: string, memberId: string, memberName: string) => {
@@ -136,7 +127,6 @@ export const emitMemberRemoved = (organizationId: string, memberId: string, memb
         memberName,
         organizationId,
     });
-    console.log(`Emitted member:removed to org:${organizationId}`);
 };
 
 export default {

@@ -33,8 +33,6 @@ export class S3Service {
       const expiresIn = 900; 
       const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
-      console.log('✅ Pre-signed upload URL generated:', { key, expiresIn });
-
       return {
         uploadUrl,
         key,
@@ -58,8 +56,6 @@ export class S3Service {
 
       const downloadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
-      console.log('Pre-signed download URL generated:', { key });
-
       return downloadUrl;
     } catch (error) {
       console.error(' Error generating pre-signed download URL:', error);
@@ -78,8 +74,6 @@ export class S3Service {
       });
 
       await this.s3Client.send(command);
-
-      console.log('File deleted from S3:', key);
     } catch (error) {
       console.error('Error deleting file from S3:', error);
       throw new Error('Failed to delete file');
@@ -129,7 +123,6 @@ export class S3Service {
       }
 
       const buffer = Buffer.concat(chunks);
-      console.log('File downloaded from S3:', { key, size: buffer.length });
 
       return buffer;
     } catch (error) {
@@ -151,8 +144,6 @@ export class S3Service {
       });
 
       await this.s3Client.send(command);
-
-      console.log('File uploaded to S3:', { key, size: buffer.length });
     } catch (error) {
       console.error('Error uploading file to S3:', error);
       throw new Error('Failed to upload file');

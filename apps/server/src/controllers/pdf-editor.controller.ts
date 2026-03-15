@@ -37,10 +37,8 @@ export class PDFEditorController {
       let savedTextElements = null;
       if (template.extracted_text && template.extracted_text.endsWith('-elements.json')) {
         try {
-          console.log('📄 Loading saved text elements from S3:', template.extracted_text);
           const jsonBuffer = await s3Service.downloadFileAsBuffer(template.extracted_text);
           savedTextElements = JSON.parse(jsonBuffer.toString());
-          console.log('✅ Loaded saved text elements:', savedTextElements.textElements?.length || 0, 'elements');
         } catch (err) {
           console.warn('⚠️ Could not load saved text elements:', err);
         }
@@ -110,7 +108,6 @@ export class PDFEditorController {
 
       // Send PDF buffer
       res.send(pdfBuffer);
-      console.log(`✅ PDF sent successfully: ${pdfBuffer.length} bytes`);
     } catch (error) {
       console.error('❌ Error downloading PDF:', error);
       return res.status(500).json({
@@ -500,8 +497,6 @@ export class PDFEditorController {
           createdAt: generatedDocument.created_at.toISOString(),
         });
       }
-
-      console.log(`Document generated successfully: ${generatedDocument.id}`);
 
       return res.status(200).json({
         success: true,

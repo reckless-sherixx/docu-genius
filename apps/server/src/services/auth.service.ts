@@ -10,8 +10,6 @@ export class AuthService {
     // Register a new user
     static async register(data: RegisterInput) {
         try {
-            console.log('📝 Starting registration for:', data.email);
-
             // Check if user already exists
             const existingUser = await prisma.user.findUnique({
                 where: { email: data.email }

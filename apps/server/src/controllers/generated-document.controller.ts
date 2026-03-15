@@ -263,8 +263,6 @@ export class GeneratedDocumentController {
         html: emailHtml,
       });
 
-      console.log(`📧 Document email queued: ${document.document_number} → ${recipientEmail}`);
-
       return res.status(200).json({
         success: true,
         message: `Document emailed successfully to ${recipientEmail}`,

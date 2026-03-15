@@ -8,5 +8,3 @@ export const fileCleanupQueue = new Queue(fileCleanupQueueName, {
   connection: redisConnection,
   defaultJobOptions: defaultQueueOptions,
 });
-
-console.log('📋 File cleanup queue initialized');

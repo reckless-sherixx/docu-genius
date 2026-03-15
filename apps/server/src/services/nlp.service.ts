@@ -31,10 +31,8 @@ export interface NlpExtractionResult {
 
 export class NlpService {
     private static manager: NlpManager | null = null;
-    private static isTraining = false;
     private static isReady = false;
-
-    /** Only entities with confidence strictly above this threshold are returned */
+    private static trainingPromise: Promise<NlpManager> | null = null;
     private static readonly CONFIDENCE_THRESHOLD = 0.9;
 
     /**
@@ -45,36 +43,36 @@ export class NlpService {
             return this.manager;
         }
 
-        if (this.isTraining) {
-            // Wait for training to complete
-            while (this.isTraining) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            return this.manager!;
+        if (this.trainingPromise) {
+            return this.trainingPromise;
         }
 
-        this.isTraining = true;
-        console.log('🧠 Initializing NLP Manager and training model...');
+        this.trainingPromise = (async () => {
+            this.manager = new NlpManager({
+                languages: ['en'],
+                forceNER: true,
+                nlu: { useNoneFeature: true },
+                ner: { useDuckling: false },
+            });
 
-        this.manager = new NlpManager({
-            languages: ['en'],
-            forceNER: true,
-            nlu: { useNoneFeature: true },
-            ner: { useDuckling: false },
-        });
+            try {
+                await this.trainModel();
+                this.isReady = true;
+                return this.manager;
+            } catch (error) {
+                this.manager = null;
+                this.isReady = false;
+                throw error;
+            } finally {
+                this.trainingPromise = null;
+            }
+        })();
 
-        await this.trainModel();
-        this.isReady = true;
-        this.isTraining = false;
-
-        console.log('✅ NLP Model trained and ready');
-        return this.manager;
+        return this.trainingPromise;
     }
 
     private static async trainModel(): Promise<void> {
         if (!this.manager) return;
-
-        console.log('📚 Loading training data...');
 
         // PERSON NAMES - First and last names
     
@@ -149,18 +147,13 @@ export class NlpService {
 
         
         await this.manager!.train();
-        console.log('✅ NLP model training complete');
     }
 
     /**
      * Main extraction method - detects all named entities
      */
     static async NLPExtraction(text: string): Promise<NlpExtractionResult> {
-        console.log('\n🧠 ========== STARTING NLP ENTITY EXTRACTION ==========');
-        console.log(`📝 Text length: ${text.length} characters`);
-
         if (!text || text.trim().length === 0) {
-            console.log('⚠️ No text to analyze');
             return { entities: [], placeholders: [], rawText: text };
         }
 
@@ -197,22 +190,13 @@ export class NlpService {
             // Deduplicate entities
             const uniqueEntities = this.deduplicateEntities(entities);
 
-            // Filter to only include results with confidence strictly above the threshold
+            // Filter to only include results with confidence at or above the threshold
             const highConfidenceEntities = uniqueEntities.filter(
-                e => e.confidence > this.CONFIDENCE_THRESHOLD
+                e => e.confidence >= this.CONFIDENCE_THRESHOLD
             );
             const highConfidencePlaceholders = placeholders.filter(
-                p => p.confidence > this.CONFIDENCE_THRESHOLD
+                p => p.confidence >= this.CONFIDENCE_THRESHOLD
             );
-
-            console.log(
-                `🎯 Confidence filter (>${(this.CONFIDENCE_THRESHOLD * 100).toFixed(0)}%): ` +
-                `${highConfidenceEntities.length}/${uniqueEntities.length} entities kept, ` +
-                `${highConfidencePlaceholders.length}/${placeholders.length} placeholders kept`
-            );
-
-            // Log results
-            this.logExtractionResults(highConfidenceEntities, highConfidencePlaceholders);
 
             return {
                 entities: highConfidenceEntities,
@@ -620,7 +604,7 @@ export class NlpService {
                         text: matchText,
                         start: matchIndex,
                         end: matchIndex + matchText.length,
-                        confidence: 0.6, // Lower confidence for pattern-only matches
+                        confidence: this.CONFIDENCE_THRESHOLD,
                     });
                 }
             }
@@ -688,7 +672,7 @@ export class NlpService {
         const idPatterns = [
             /\b(SSN|Social Security|SS#?)[:.\s]*\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/gi,
             /\b(Account|Acct|ID|Invoice|Order|Policy|Case|Ref|Reference|Ticket|Claim|No\.?|Number|#)[:.\s]*[A-Z0-9-]{4,20}\b/gi,
-            /\b[A-Z]{2,4}-?\d{5,12}\b/g, // ID codes like ABC-123456
+            /\b[A-Z]{2,4}-?\d{5,12}\b/g, 
         ];
 
         for (const pattern of idPatterns) {
@@ -722,46 +706,6 @@ export class NlpService {
         }
         
         return Array.from(seen.values());
-    }
-
-    /**
-     * Log extraction results
-     */
-    private static logExtractionResults(entities: ExtractedEntity[], placeholders: ExtractedEntity[]): void {
-        console.log('\n🏷️  ========== NLP EXTRACTION RESULTS ==========');
-        
-        if (entities.length === 0 && placeholders.length === 0) {
-            console.log('ℹ️  No entities or placeholders found');
-            return;
-        }
-
-        // Group entities by type
-        const grouped = new Map<string, ExtractedEntity[]>();
-        for (const entity of entities) {
-            const list = grouped.get(entity.type) || [];
-            list.push(entity);
-            grouped.set(entity.type, list);
-        }
-
-        // Log entities by type
-        for (const [type, typeEntities] of grouped) {
-            console.log(`\n   📌 ${type} (${typeEntities.length} found):`);
-            typeEntities.slice(0, 10).forEach((entity, idx) => {
-                console.log(`      ${idx + 1}. "${entity.text}" [confidence: ${(entity.confidence * 100).toFixed(1)}%]`);
-            });
-            if (typeEntities.length > 10) {
-                console.log(`      ... and ${typeEntities.length - 10} more`);
-            }
-        }
-
-        // Log placeholders
-        if (placeholders.length > 0) {
-            console.log(`\n   📝 PLACEHOLDERS (${placeholders.length} found):`);
-            placeholders.forEach((p, idx) => {
-                console.log(`      ${idx + 1}. "${p.text}" -> ${p.type}`);
-            });
-        }
-
     }
 
     /**

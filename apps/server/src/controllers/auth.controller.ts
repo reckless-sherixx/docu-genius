@@ -229,7 +229,6 @@ export class AuthController {
 
     // Secure Route 
     static async secureRoute(req: Request, res: Response) {
-        console.log('Accessing secure route for user:', req.userId);
         return res.status(200).json({
             success: true,
             message: 'You have accessed a secure route',

@@ -51,8 +51,6 @@ export class PDFEditorService {
         organizationId: string
     ): Promise<any> {
         try {
-            console.log('🔨 Creating PDF without text layer for editing:', templateId);
-
             const template = await prisma.template.findUnique({
                 where: { id: templateId },
             });
@@ -69,7 +67,6 @@ export class PDFEditorService {
             const originalPages = originalDoc.getPages();
             
             const isScannedPDF = template.template_type === 'SCANNED_PDF';
-            console.log(`📋 Template type: ${template.template_type}, isScannedPDF: ${isScannedPDF}`);
             
             // Extract text from original PDF first using pdf-parse 
             let extractedText = '';
@@ -82,7 +79,6 @@ export class PDFEditorService {
                 const parse = require('pdf-parse');
                 const parsedPdf = await parse(originalBuffer);
                 extractedText = parsedPdf.text || '';
-                console.log(`📝 Extracted ${extractedText.length} characters from PDF via pdf-parse`);
             } catch (parseError) {
                 console.warn('⚠️ pdf-parse failed:', parseError instanceof Error ? parseError.message : 'Unknown error');
             }
@@ -92,13 +88,9 @@ export class PDFEditorService {
             
             // Only use OCR if pdf-parse extracted minimal/no text (indicates scanned content)
             if (needsOCR && extractedText.trim().length < 100) {
-                console.log('🔍 Minimal text from pdf-parse, using OCR for scanned content...');
-                console.log(`📝 Current extractedText length: ${extractedText.length}`);
                 try {
                     // Get image dimensions for scaling calculations
-                    console.log('📸 Converting PDF pages to images...');
                     const images = await this.convertPDFToImages(originalBuffer, 2);
-                    console.log(`📸 Converted ${images.length} pages to images`);
                     
                     // Get image metadata in parallel
                     const metadataPromises = images.map(img => sharp(img).metadata());
@@ -106,51 +98,28 @@ export class PDFEditorService {
                     for (const metadata of metadataResults) {
                         imageScales.push({ width: metadata.width || 1, height: metadata.height || 1 });
                     }
-                    
-                    console.log('🔤 Running OCR with positions on images...');
+
                     // Pass pre-converted images to avoid re-converting
                     const ocrResult = await this.performOCROnPDFWithPositions(originalBuffer, originalPages.length, images);
                     extractedText = ocrResult.fullText;
                     ocrTextLines = ocrResult.lines;
                     usedOCR = true;
-                    console.log(`✅ OCR extracted ${ocrTextLines.length} text lines from ${originalPages.length} pages`);
-                    
-                    // Log sample lines
-                    if (ocrTextLines.length > 0) {
-                        console.log(`📝 Sample OCR lines:`);
-                        for (const line of ocrTextLines.slice(0, 3)) {
-                            console.log(`   - "${line.text.substring(0, 40)}..." at (${line.x}, ${line.y})`);
-                        }
-                    } else {
-                        console.log(`⚠️ No OCR lines extracted! Check Tesseract output.`);
-                    }
                 } catch (ocrError) {
                     console.error('❌ OCR failed:', ocrError instanceof Error ? ocrError.message : 'Unknown error');
                     console.error('❌ Full OCR error:', ocrError);
                 }
-            } else if (extractedText.trim().length >= 100) {
-                console.log('✅ pdf-parse extracted sufficient text, skipping OCR');
             }
             
             // Run NLP extraction on the text (for both scanned and regular PDFs)
-            console.log('🧠 Running NLP entity extraction...');
             let nlpEntities: ExtractedEntity[] = [];
             let nlpPlaceholders: ExtractedEntity[] = [];
             
             try {
                 const nlpResult = await NlpService.NLPExtraction(extractedText);
-                console.log(`📊 Raw NLP result: ${nlpResult.entities.length} entities, ${nlpResult.placeholders.length} placeholders`);
-                
-                // Log all entities with their confidence
-                for (const e of nlpResult.entities.slice(0, 10)) {
-                    console.log(`   Entity: "${e.text}" (${e.type}) confidence: ${(e.confidence * 100).toFixed(1)}%`);
-                }
-                
+
                 // Filter entities with confidence > 80%
                 nlpEntities = nlpResult.entities.filter(e => e.confidence >= 0.8);
                 nlpPlaceholders = nlpResult.placeholders.filter(e => e.confidence >= 0.8);
-                console.log(`✅ NLP found ${nlpEntities.length} entities with ≥80% confidence (filtered from ${nlpResult.entities.length})`);
-                console.log(`   Entity types: ${[...new Set(nlpEntities.map(e => e.type))].join(', ') || 'none'}`);
             } catch (nlpError) {
                 console.error('❌ NLP extraction failed:', nlpError instanceof Error ? nlpError.message : 'Unknown error');
             }
@@ -166,9 +135,6 @@ export class PDFEditorService {
                 const { width: pdfWidth, height: pdfHeight } = originalPage.getSize();
                 
                 const newPage = newPdfDoc.addPage([pdfWidth, pdfHeight]);
-                
-    
-                console.log(`✅ Page ${i + 1} created as blank (${pdfWidth}x${pdfHeight})`);
                 
                 pageData.push({
                     pageNumber: i + 1,
@@ -213,8 +179,6 @@ export class PDFEditorService {
 
     async preparePDFForEditing(templateId: string): Promise<any> {
         try {
-            console.log('📝 Preparing PDF for editing:', templateId);
-
             const template = await prisma.template.findUnique({
                 where: { id: templateId },
             });
@@ -241,8 +205,6 @@ export class PDFEditorService {
     }
 
     private async processTextPDF(pdfBuffer: Buffer, templateId: string): Promise<any> {
-        console.log('📄 Processing text-based PDF');
-
         try {
             // Load PDF with pdf-lib
             const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
@@ -271,8 +233,6 @@ export class PDFEditorService {
                 editable: true,
                 ocrApplied: false,
             };
-
-            console.log(`✅ Processed ${pages.length} pages`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing text PDF:', error);
@@ -285,8 +245,6 @@ export class PDFEditorService {
      * Apply OCR to create searchable/editable text layer
      */
     private async processScannedPDF(pdfBuffer: Buffer, templateId: string): Promise<any> {
-        console.log('🖼️ Processing scanned PDF with OCR');
-
         try {
             // Load PDF with pdf-lib
             const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
@@ -303,7 +261,6 @@ export class PDFEditorService {
 
                 // If minimal text, apply OCR
                 if (ocrText.trim().length < 100) {
-                    console.log('🔍 Minimal text detected, applying OCR...');
                     ocrText = await this.performOCROnPDF(pdfBuffer, pages.length);
                     ocrApplied = true;
                 }
@@ -329,8 +286,6 @@ export class PDFEditorService {
                 editable: true,
                 ocrApplied,
             };
-
-            console.log(`✅ Processed scanned PDF with ${ocrApplied ? 'OCR' : 'existing text'}`);
             return pdfData;
         } catch (error) {
             console.error('❌ Error processing scanned PDF:', error);
@@ -356,13 +311,9 @@ export class PDFEditorService {
      * Uses the shared Tesseract worker pool and processes pages in parallel.
      */
     private async performOCROnPDF(buffer: Buffer, pageCount: number): Promise<string> {
-        console.log(`🔤 Running OCR on PDF pages...`);
-        
         try {
-            console.log(`📄 Converting PDF pages to images...`);
             const images = await this.convertPDFToImages(buffer, 2); // scale 2 is sufficient for OCR
             const numPages = images.length;
-            console.log(`✅ Converted ${numPages} pages to images`);
             
             // Preprocess all images in parallel
             const preprocessPromises = images
@@ -375,7 +326,6 @@ export class PDFEditorService {
                 preprocessed.map(async (ppBuffer, i) => {
                     const worker = await tesseractPool.acquire();
                     try {
-                        console.log(`🔍 Running OCR on page ${i + 1}/${numPages}...`);
                         const { data: { text } } = await worker.recognize(ppBuffer);
                         return this.cleanOCRText(text);
                     } finally {
@@ -385,7 +335,6 @@ export class PDFEditorService {
             );
             
             const fullText = pageTexts.join('\n\n--- Page Break ---\n\n');
-            console.log(`✅ OCR completed, extracted ${fullText.length} characters from ${numPages} pages`);
             
             return this.cleanOCRText(fullText.trim());
         } catch (error) {
@@ -445,26 +394,20 @@ export class PDFEditorService {
         fullText: string;
         lines: Array<{text: string, pageIndex: number, x: number, y: number, width: number, height: number, fontSize: number}>;
     }> {
-        console.log(`🔤 Running OCR with positions on PDF pages...`);
-        
         try {
             const images = preConvertedImages ?? await this.convertPDFToImages(buffer, 2);
             const numPages = images.length;
-            console.log(`✅ Processing ${numPages} pages for OCR`);
             
             // Process all pages in parallel via worker pool
             const pageResults = await Promise.all(
                 images.map((img, i) => {
                     if (!img) return Promise.resolve({ text: '', lines: [] as any[] });
-                    console.log(`🔍 Queuing OCR for page ${i + 1}/${numPages}...`);
                     return this.ocrPageWithPositions(img, i);
                 })
             );
             
             const allLines = pageResults.flatMap(r => r.lines);
             const fullText = pageResults.map(r => r.text).join('\n\n');
-            
-            console.log(`✅ OCR completed, extracted ${allLines.length} positioned lines from ${numPages} pages`);
             
             const cleanedLines = allLines.map(line => ({
                 ...line,
@@ -482,14 +425,11 @@ export class PDFEditorService {
      * Perform OCR on an image buffer using Tesseract (uses worker pool)
      */
     private async performOCR(buffer: Buffer): Promise<string> {
-        console.log('🔤 Running OCR with Tesseract (pooled worker)...');
-
         const preprocessedBuffer = await this.preprocessForOCR(buffer);
         const worker = await tesseractPool.acquire();
 
         try {
             const { data: { text } } = await worker.recognize(preprocessedBuffer);
-            console.log(`✅ OCR completed, extracted ${text.length} characters`);
             return this.cleanOCRText(text);
         } catch (error) {
             console.error('❌ OCR failed:', error);
@@ -531,7 +471,6 @@ export class PDFEditorService {
                 }
             })
         );
-        console.log(`🧹 Cleaned up ${oldTempTemplates.length} old temporary template(s) for parent ${parentTemplateId}`);
     }
 
     /**
@@ -980,14 +919,6 @@ export class PDFEditorService {
         try {
             const { dataUrl, x, y, width, height } = element;
             
-            console.log(`🖼️ Processing image element:`, {
-                id: element.id,
-                type: element.type,
-                x, y, width, height,
-                hasDataUrl: !!dataUrl,
-                dataUrlLength: dataUrl?.length || 0
-            });
-            
             if (!dataUrl) {
                 console.warn('⚠️ Image element missing dataUrl, skipping');
                 return;
@@ -1003,8 +934,6 @@ export class PDFEditorService {
             const imageType = base64Match[1];
             const base64Data = base64Match[2];
             const imageBuffer = Buffer.from(base64Data, 'base64');
-            
-            console.log(`🖼️ Image type: ${imageType}, buffer size: ${imageBuffer.length}`);
 
             // Determine image type and embed
             let embeddedImage;
@@ -1026,8 +955,6 @@ export class PDFEditorService {
                 width: imgWidth,
                 height: imgHeight,
             });
-
-            console.log(`Added ${element.type || 'image'} at (${imgX}, ${imgY}) size ${imgWidth}x${imgHeight}`);
         } catch (error) {
             console.error('Error adding image element:', error);
         }
@@ -1108,8 +1035,6 @@ export class PDFEditorService {
                     color: rgb(color.r, color.g, color.b),
                 });
             }
-
-            console.log(`Text added successfully at (${adjustedX.toFixed(2)}, ${y.toFixed(2)})`);
         } catch (error) {
             console.error('Error adding text to new PDF:', error);
         }
@@ -1194,7 +1119,6 @@ export class PDFEditorService {
      * Add image to PDF page
      */
     private async addImageToPage(pdfDoc: PDFDocument, page: PDFPage, edit: any): Promise<void> {
-        console.log(' Adding image to page:', edit.position);
     }
 
     /**
@@ -1205,7 +1129,6 @@ export class PDFEditorService {
         page: PDFPage,
         edit: any
     ): Promise<void> {
-        console.log(' Adding signature to page:', edit.position);
     }
 
     /**K
@@ -1278,8 +1201,6 @@ export class PDFEditorService {
                 removeOnComplete: true,
             }
         );
-
-        console.log(`⏰ Scheduled deletion for template ${templateId} at ${expiresAt}`);
     }
 }
 

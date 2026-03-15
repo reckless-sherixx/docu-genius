@@ -41,7 +41,6 @@ export const getS3Client = (): S3Client => {
             region: awsConfig.region,
             credentials: awsConfig.credentials,
         });
-        console.log('✅ AWS S3 Client initialized');
     }
 
     return s3ClientInstance;

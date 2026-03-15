@@ -14,32 +14,23 @@ async function startServer() {
         const httpServer = createServer(app);
     
         initializeSocketIO(httpServer);
-        
-        console.log('🔄 Starting email queue worker...');
+
         emailQueueWorker.on('completed', (job) => {
-            console.log(`✅ Email job ${job.id} completed successfully`);
         });
         
         emailQueueWorker.on('failed', (job, err) => {
-            console.error(`❌ Email job ${job?.id} failed:`, err.message);
+            console.error(`Email job ${job?.id} failed:`, err.message);
         });
 
-        console.log('🔄 Starting template processing worker...');
         templateProcessingWorker.on('ready', () => {
-            console.log(`📄 Template processing worker is ready`);
         });
         
         httpServer.listen(PORT, () => {
-            console.log(`🚀 Server is running on http://localhost:${PORT}`);
-            console.log(`📧 Email worker is listening for jobs...`);
-            console.log(`📄 Template processing worker is listening for jobs...`);
-            console.log(`🔌 WebSocket server is ready for connections...`);
         });
 
         tesseractPool.warmup(2).then(() => {
-            console.log('🔤 Tesseract OCR workers warmed up and ready');
         }).catch(err => {
-            console.warn('⚠️ Tesseract warmup failed (will initialize lazily):', err.message);
+            console.warn(' Tesseract warmup failed (will initialize lazily):', err.message);
         });
     } catch (error) {
         console.error("Error starting server:", error);
