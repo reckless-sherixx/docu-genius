@@ -235,6 +235,14 @@ export class TemplateController {
     async getTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { id } = req.params;
+            const userId = req.userId;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized: User ID required',
+                });
+            }
 
             const template = await prisma.template.findUnique({
                 where: { id },
@@ -250,6 +258,23 @@ export class TemplateController {
                 });
             }
 
+            // Verify user has access to this organization
+            const userOrg = await prisma.organizationMember.findUnique({
+                where: {
+                    organization_id_user_id: {
+                        organization_id: template.organization_id || '',
+                        user_id: userId,
+                    },
+                },
+            });
+
+            if (!userOrg) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: You do not have permission to access this template',
+                });
+            }
+
             // Convert BigInt to string for JSON serialization
             const serializedTemplate = {
                 ...template,
@@ -261,6 +286,7 @@ export class TemplateController {
                 data: serializedTemplate,
             });
         } catch (error) {
+            console.error('❌ Error fetching template:', error instanceof Error ? error.message : error);
             next(error);
         }
     }
@@ -269,11 +295,36 @@ export class TemplateController {
     async getTemplates(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { organizationId } = req.query;
+            const userId = req.userId;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized: User ID required',
+                });
+            }
 
             if (!organizationId) {
                 return res.status(400).json({
                     success: false,
                     message: 'organizationId is required',
+                });
+            }
+
+            // Verify user has access to this organization
+            const userOrg = await prisma.organizationMember.findUnique({
+                where: {
+                    organization_id_user_id: {
+                        organization_id: organizationId as string,
+                        user_id: userId,
+                    },
+                },
+            });
+
+            if (!userOrg) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: You do not have permission to access this organization',
                 });
             }
 
@@ -302,6 +353,7 @@ export class TemplateController {
                 data: serializedTemplates,
             });
         } catch (error) {
+            console.error('❌ Error fetching templates:', error instanceof Error ? error.message : error);
             next(error);
         }
     }
@@ -309,6 +361,14 @@ export class TemplateController {
     async deleteTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { id } = req.params;
+            const userId = req.userId;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized: User ID required',
+                });
+            }
 
             const template = await prisma.template.findUnique({
                 where: { id },
@@ -318,6 +378,23 @@ export class TemplateController {
                 return res.status(404).json({
                     success: false,
                     message: 'Template not found',
+                });
+            }
+
+            // Verify user has access to this organization
+            const userOrg = await prisma.organizationMember.findUnique({
+                where: {
+                    organization_id_user_id: {
+                        organization_id: template.organization_id || '',
+                        user_id: userId,
+                    },
+                },
+            });
+
+            if (!userOrg) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: You do not have permission to delete this template',
                 });
             }
 
@@ -336,6 +413,7 @@ export class TemplateController {
                 message: 'Template deleted successfully',
             });
         } catch (error) {
+            console.error('❌ Error deleting template:', error instanceof Error ? error.message : error);
             next(error);
         }
     }
@@ -348,11 +426,39 @@ export class TemplateController {
             if (!userId) {
                 return res.status(401).json({
                     success: false,
-                    message: 'Unauthorized',
+                    message: 'Unauthorized: User ID required',
                 });
             }
 
-            const template = await prisma.template.update({
+            const template = await prisma.template.findUnique({
+                where: { id },
+            });
+
+            if (!template) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Template not found',
+                });
+            }
+
+            // Verify user has access to this organization
+            const userOrg = await prisma.organizationMember.findUnique({
+                where: {
+                    organization_id_user_id: {
+                        organization_id: template.organization_id || '',
+                        user_id: userId,
+                    },
+                },
+            });
+
+            if (!userOrg) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: You do not have permission to approve this template',
+                });
+            }
+
+            const updatedTemplate = await prisma.template.update({
                 where: { id },
                 data: {
                     is_approved: true,
@@ -364,9 +470,10 @@ export class TemplateController {
             return res.status(200).json({
                 success: true,
                 message: 'Template approved successfully',
-                data: template,
+                data: updatedTemplate,
             });
         } catch (error) {
+            console.error('❌ Error approving template:', error instanceof Error ? error.message : error);
             next(error);
         }
     }

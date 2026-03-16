@@ -8,7 +8,15 @@ export class PDFEditorController {
   async openForEditing(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
-      
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized: User ID required',
+        });
+      }
+
       if (!id) {
         return res.status(400).json({
           success: false,
@@ -24,6 +32,31 @@ export class PDFEditorController {
         return res.status(404).json({
           success: false,
           message: 'Template not found',
+        });
+      }
+
+      // Verify organization exists
+      if (!template.organization_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template missing organization information',
+        });
+      }
+
+      // Verify user has access to this organization
+      const userOrg = await prisma.organizationMember.findUnique({
+        where: {
+          organization_id_user_id: {
+            organization_id: template.organization_id,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (!userOrg) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You do not have permission to access this template',
         });
       }
 
@@ -61,6 +94,7 @@ export class PDFEditorController {
         },
       });
     } catch (error) {
+      console.error('❌ Error opening PDF for editing:', error instanceof Error ? error.message : error);
       next(error);
     }
   }
@@ -71,6 +105,15 @@ export class PDFEditorController {
   async downloadPDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
+      const userId = req.userId;
+
+      // Validate input
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized: User ID required',
+        });
+      }
 
       if (!id) {
         return res.status(400).json({
@@ -79,6 +122,7 @@ export class PDFEditorController {
         });
       }
 
+      // Get template with organization info
       const template = await prisma.template.findUnique({
         where: { id },
       });
@@ -90,13 +134,52 @@ export class PDFEditorController {
         });
       }
 
+      // Verify organization exists
+      if (!template.organization_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template missing organization information',
+        });
+      }
+
+      // Verify user has access to this organization
+      const userOrg = await prisma.organizationMember.findUnique({
+        where: {
+          organization_id_user_id: {
+            organization_id: template.organization_id,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (!userOrg) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You do not have permission to access this template',
+        });
+      }
+
+      // Check if file exists in S3
+      const fileExists = await s3Service.fileExists(template.s3_key);
+      if (!fileExists) {
+        return res.status(404).json({
+          success: false,
+          message: 'PDF file not found in storage',
+        });
+      }
+
       // Download from S3
       const pdfBuffer = await s3Service.downloadFileAsBuffer(template.s3_key);
+
+      // Safely encode filename for Content-Disposition header
+      const sanitizedFilename = (template.template_name || 'document')
+        .replace(/[^\w\s.-]/g, '')
+        .substring(0, 100) + '.pdf';
 
       // Set response headers
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Length', pdfBuffer.length);
-      res.setHeader('Content-Disposition', `inline; filename="${template.template_name}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="${sanitizedFilename}"`);
       res.setHeader('Cache-Control', 'public, max-age=3600');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
@@ -104,6 +187,7 @@ export class PDFEditorController {
       // Send PDF buffer
       res.send(pdfBuffer);
     } catch (error) {
+      console.error('❌ Error downloading PDF:', error instanceof Error ? error.message : error);
       next(error);
     }
   }
@@ -218,6 +302,14 @@ export class PDFEditorController {
   async prepareEditablePDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId } = req.body;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized: User ID required',
+        });
+      }
 
       if (!templateId) {
         return res.status(400).json({
@@ -238,6 +330,22 @@ export class PDFEditorController {
         });
       }
 
+      // Verify user has access to this organization
+      const userOrg = await prisma.organizationMember.findUnique({
+        where: {
+          organization_id_user_id: {
+            organization_id: template.organization_id,
+            user_id: userId,
+          },
+        },
+      });
+
+      if (!userOrg) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You do not have permission to access this template',
+        });
+      }
 
       const result = await pdfEditorService.prepareEditablePDFWithoutText(
         templateId,
@@ -256,6 +364,7 @@ export class PDFEditorController {
         nlpPlaceholders: result.nlpPlaceholders || [],
       });
     } catch (error) {
+      console.error('❌ Error preparing editable PDF:', error instanceof Error ? error.message : error);
       next(error);
     }
   }

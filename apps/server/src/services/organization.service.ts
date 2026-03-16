@@ -162,35 +162,38 @@ export class OrganizationService {
 
     static async createOrganization(data: createOrganizationInput & { organization_head_id: string }) {
         try {
-            // Generate a random 6-digit organization PIN
-            const organization_pin = Math.floor(100000 + Math.random() * 900000);
+            return await prisma.$transaction(async (tx) => {
+                // Keep organization creation and membership creation atomic.
+                const organization_pin = Math.floor(100000 + Math.random() * 900000);
 
-            // Create organization
-            const organization = await prisma.organization.create({
-                data: {
-                    name: data.name,
-                    description: data.description,
-                    organization_head_id: data.organization_head_id,
-                    organization_pin,
-                }
+                const organization = await tx.organization.create({
+                    data: {
+                        name: data.name,
+                        description: data.description,
+                        organization_head_id: data.organization_head_id,
+                        organization_pin,
+                    }
+                });
+
+                const member = await tx.organizationMember.create({
+                    data: {
+                        organization_id: organization.id,
+                        user_id: data.organization_head_id,
+                        role: 'ADMIN',
+                    }
+                });
+
+                return {
+                    id: organization.id,
+                    name: organization.name,
+                    description: organization.description,
+                    organization_pin: organization.organization_pin,
+                    organization_head_id: organization.organization_head_id,
+                    created_at: organization.created_at,
+                    role: member.role,
+                    joined_at: member.joined_at,
+                };
             });
-
-            // Add the creator as a CREATOR member
-            await prisma.organizationMember.create({
-                data: {
-                    organization_id: organization.id,
-                    user_id: data.organization_head_id,
-                    role: 'ADMIN',
-                }
-            });
-
-            return {
-                id: organization.id,
-                name: organization.name,
-                description: organization.description,
-                organization_pin: organization.organization_pin,
-                created_at: organization.created_at,
-            };
         } catch (error) {
             console.error('❌ Failed to create organization:', error);
             throw error;

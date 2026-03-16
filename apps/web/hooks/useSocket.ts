@@ -60,7 +60,8 @@ export function useSocket({ organizationId, autoConnect = true }: UseSocketOptio
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+  const rawBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+  const backendUrl = rawBackendUrl.replace(/\/api\/?$/, '');
   const token = session?.user?.token;
 
   // Initialize socket connection
@@ -72,10 +73,12 @@ export function useSocket({ organizationId, autoConnect = true }: UseSocketOptio
     // Create socket connection
     socketRef.current = io(backendUrl, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      path: '/socket.io',
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      timeout: 10000,
     });
 
     const socket = socketRef.current;

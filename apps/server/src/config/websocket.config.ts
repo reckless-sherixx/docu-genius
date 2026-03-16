@@ -28,9 +28,29 @@ interface MemberJoinedPayload {
 }
 
 export const initializeSocketIO = (httpServer: HttpServer): Server => {
+    const allowedOrigins = [
+        process.env.FRONTEND_URL,
+        process.env.NEXT_PUBLIC_FRONTEND_URL,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+    ].filter(Boolean) as string[];
+
     io = new Server(httpServer, {
         cors: {
-            origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+            origin: (origin, callback) => {
+                // Allow same-origin or tools that omit origin header.
+                if (!origin) {
+                    callback(null, true);
+                    return;
+                }
+
+                if (allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                    return;
+                }
+
+                callback(new Error(`Origin ${origin} is not allowed by Socket.IO CORS`));
+            },
             methods: ['GET', 'POST'],
             credentials: true,
         },
