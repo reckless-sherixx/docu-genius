@@ -11,6 +11,7 @@ import pdfEditorRoutes from './routes/pdf-editor.route.js';
 import generatedDocumentRoutes from './routes/generated-document.route.js';
 import verificationRoutes from './routes/verification.route.js'
 import { appLimiter } from './config/rateLimit.config.js';
+import { globalErrorHandler } from './middleware/error.middleware.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +38,8 @@ export const createApp = (): Express => {
     app.use("/", verificationRoutes);
 
     app.get("/health", (req: Request, res: Response) => res.json({ status: "ok" }));
+
+    app.use(globalErrorHandler);
 
     return app;
 }

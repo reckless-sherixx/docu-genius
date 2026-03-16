@@ -5,36 +5,36 @@ import { generateDocLimiter } from '../config/rateLimit.config.js';
 
 const router: Router = Router();
 
-router.get('/:id/open', authMiddleware, (req, res) =>
-  pdfEditorController.openForEditing(req, res)
+router.get('/:id/open', authMiddleware, (req, res, next) =>
+  pdfEditorController.openForEditing(req, res, next)
 );
 
-router.get('/:id/edit', authMiddleware, (req, res) =>
-  pdfEditorController.openForEditing(req, res)
+router.get('/:id/edit', authMiddleware, (req, res, next) =>
+  pdfEditorController.openForEditing(req, res, next)
 );
 
-router.get('/:id/download', authMiddleware, (req, res) =>
-  pdfEditorController.downloadPDF(req, res)
+router.get('/:id/download', authMiddleware, (req, res, next) =>
+  pdfEditorController.downloadPDF(req, res, next)
 );
 
-router.post('/save', authMiddleware, (req, res) =>
-  pdfEditorController.saveEditedPDF(req, res)
+router.post('/save', authMiddleware, (req, res, next) =>
+  pdfEditorController.saveEditedPDF(req, res, next)
 );
 
-router.post('/prepare-editable', authMiddleware, (req, res) =>
-  pdfEditorController.prepareEditablePDF(req, res)
+router.post('/prepare-editable', authMiddleware, (req, res, next) =>
+  pdfEditorController.prepareEditablePDF(req, res, next)
 );
 
-router.post('/save-editable', authMiddleware, (req, res) =>
-  pdfEditorController.saveEditablePDF(req, res)
+router.post('/save-editable', authMiddleware, (req, res, next) =>
+  pdfEditorController.saveEditablePDF(req, res, next)
 );
 
-router.post('/save-permanent', authMiddleware, (req, res) =>
-  pdfEditorController.savePermanentTemplate(req, res)
+router.post('/save-permanent', authMiddleware, (req, res, next) =>
+  pdfEditorController.savePermanentTemplate(req, res, next)
 );
 
-router.post('/generate-document', authMiddleware, generateDocLimiter, (req, res) =>
-  pdfEditorController.generateDocument(req, res)
+router.post('/generate-document', authMiddleware, generateDocLimiter, (req, res, next) =>
+  pdfEditorController.generateDocument(req, res, next)
 );
 
 export default router;

@@ -1,15 +1,22 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { templateQueue } from '../queues/template.queue.js';
 
 export class TemplateController {
 
-    async directUpload(req: Request, res: Response): Promise<any> {
+    async directUpload(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
-            const userId = (req as any).userId;
+            const userId = req.userId;
             const file = req.file;
             const { organizationId, name, description, category } = req.body;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
 
             if (!file) {
                 return res.status(400).json({
@@ -71,22 +78,24 @@ export class TemplateController {
                 },
             });
         } catch (error) {
-            console.error('❌ Error in direct upload:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to upload file',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
     /**
        Generate pre-signed URL for upload
      */
-    async generateUploadUrl(req: Request, res: Response): Promise<any> {
+    async generateUploadUrl(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
-            const userId = (req as any).userId;
+            const userId = req.userId;
             const { fileName, fileType, fileSize, organizationId, name, description, category } = req.body;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
 
             // Validate required fields
             if (!fileName || !fileType || !organizationId || !name) {
@@ -154,19 +163,14 @@ export class TemplateController {
                 },
             });
         } catch (error) {
-            console.error('❌ Error generating upload URL:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to generate upload URL',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
     /**
          Confirm upload and start processing
      */
-    async confirmUpload(req: Request, res: Response): Promise<any> {
+    async confirmUpload(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { templateId } = req.body;
 
@@ -224,16 +228,11 @@ export class TemplateController {
                 },
             });
         } catch (error) {
-            console.error('❌ Error confirming upload:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to confirm upload',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
-    async getTemplate(req: Request, res: Response): Promise<any> {
+    async getTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { id } = req.params;
 
@@ -262,17 +261,12 @@ export class TemplateController {
                 data: serializedTemplate,
             });
         } catch (error) {
-            console.error('❌ Error fetching template:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to fetch template',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
 
-    async getTemplates(req: Request, res: Response): Promise<any> {
+    async getTemplates(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { organizationId } = req.query;
 
@@ -308,16 +302,11 @@ export class TemplateController {
                 data: serializedTemplates,
             });
         } catch (error) {
-            console.error('❌ Error fetching templates:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to fetch templates',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
-    async deleteTemplate(req: Request, res: Response): Promise<any> {
+    async deleteTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { id } = req.params;
 
@@ -347,19 +336,21 @@ export class TemplateController {
                 message: 'Template deleted successfully',
             });
         } catch (error) {
-            console.error('❌ Error deleting template:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to delete template',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 
-    async approveTemplate(req: Request, res: Response): Promise<any> {
+    async approveTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
         try {
             const { id } = req.params;
-            const userId = (req as any).userId;
+            const userId = req.userId;
+
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized',
+                });
+            }
 
             const template = await prisma.template.update({
                 where: { id },
@@ -376,12 +367,7 @@ export class TemplateController {
                 data: template,
             });
         } catch (error) {
-            console.error('❌ Error approving template:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to approve template',
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            next(error);
         }
     }
 }

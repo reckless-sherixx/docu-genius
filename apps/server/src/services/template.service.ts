@@ -1,8 +1,24 @@
 import prisma from "../lib/prisma.js";
-import { S3Service } from "../lib/aws/s3.js";
 import { TemplateCategory } from "@prisma/client";
+import { s3Service } from "./s3.service.js";
 
 export class TemplateService {
+    private static generateFileKey(
+        userId: string,
+        organizationId: string,
+        fileName: string,
+        type: 'templates' | 'documents' | 'avatars' = 'templates'
+    ): string {
+        const timestamp = Date.now();
+        const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        return `${type}/${organizationId}/${userId}/${timestamp}-${sanitizedFileName}`;
+    }
+
+    private static getPublicS3Url(key: string): string {
+        const bucketName = process.env.AWS_S3_BUCKET_NAME || '';
+        const region = process.env.AWS_REGION || 'us-east-1';
+        return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+    }
 
     static async uploadTemplate(
         userId: string,
@@ -20,23 +36,20 @@ export class TemplateService {
         }
     ) {
         try {
-            const fileKey = S3Service.generateFileKey(
+            const fileKey = this.generateFileKey(
                 userId,
                 organizationId,
                 file.originalname,
                 'templates'
             );
 
-            const uploadResult = await S3Service.uploadFile(
-                file.buffer,
+            await s3Service.uploadFile(
                 fileKey,
+                file.buffer,
                 file.mimetype,
-                {
-                    userId,
-                    organizationId,
-                    originalName: file.originalname,
-                }
             );
+
+            const publicUrl = this.getPublicS3Url(fileKey);
 
             // Save template metadata to database
             const template = await prisma.template.create({
@@ -44,7 +57,7 @@ export class TemplateService {
                     template_name: templateData.name,
                     template_description: templateData.description,
                     s3_key: fileKey,
-                    s3_url: uploadResult.url,
+                    s3_url: publicUrl,
                     file_size: BigInt(file.size),
                     mime_type: file.mimetype,
                     category: (templateData.category || 'GENERAL') as TemplateCategory,
@@ -57,7 +70,7 @@ export class TemplateService {
                 id: template.id,
                 name: template.template_name,
                 description: template.template_description,
-                url: uploadResult.url,
+                url: publicUrl,
                 size: file.size,
                 category: template.category,
                 uploaded_at: template.created_at,
@@ -114,7 +127,7 @@ export class TemplateService {
             }
 
             // Generate presigned URL (expires in 1 hour)
-            const downloadUrl = await S3Service.getPresignedDownloadUrl(
+            const downloadUrl = await s3Service.generatePresignedDownloadUrl(
                 template.s3_key,
                 3600
             );
@@ -150,7 +163,7 @@ export class TemplateService {
 
             // Delete from S3 if s3_key exists
             if (template.s3_key) {
-                await S3Service.deleteFile(template.s3_key);
+                await s3Service.deleteFile(template.s3_key);
             }
 
             // Delete from database
@@ -173,7 +186,7 @@ export class TemplateService {
     ) {
         try {
             // Generate unique key
-            const fileKey = S3Service.generateFileKey(
+            const fileKey = this.generateFileKey(
                 userId,
                 organizationId,
                 fileName,
@@ -181,7 +194,7 @@ export class TemplateService {
             );
 
             // Generate presigned URL (expires in 15 minutes)
-            const uploadUrl = await S3Service.getPresignedUploadUrl(
+            const uploadUrl = await s3Service.generatePresignedUploadUrlForKey(
                 fileKey,
                 contentType,
                 900
@@ -212,7 +225,7 @@ export class TemplateService {
     ) {
         try {
             // Verify file exists in S3
-            const exists = await S3Service.fileExists(fileKey);
+            const exists = await s3Service.fileExists(fileKey);
             if (!exists) {
                 throw new Error('File not found in storage');
             }
@@ -223,7 +236,7 @@ export class TemplateService {
                     template_name: templateData.name,
                     template_description: templateData.description,
                     s3_key: fileKey,
-                    s3_url: `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`,
+                    s3_url: this.getPublicS3Url(fileKey),
                     file_size: BigInt(templateData.size),
                     mime_type: templateData.mimeType,
                     category: (templateData.category || 'GENERAL') as TemplateCategory,

@@ -1,12 +1,11 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { loginSchema, registerSchema, forgetPasswordSchema, resetPasswordSchema } from '../schemas/auth.schema.js';
-import { ZodError } from 'zod';
 
 export class AuthController {
 
     // Register a new user
-    static async register(req: Request, res: Response) {
+    static async register(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = registerSchema.parse(req.body);
 
@@ -19,28 +18,7 @@ export class AuthController {
                 data: result,
             });
         } catch (error) {
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
@@ -68,7 +46,7 @@ export class AuthController {
         return res.render("emails/email-verification-error", { resendUrl });
     }
 
-    static async login(req: Request, res: Response) {
+    static async login(req: Request, res: Response, next: NextFunction) {
         try {
             // Validate request body
             const validatedData = loginSchema.parse(req.body);
@@ -82,33 +60,12 @@ export class AuthController {
                 data: result,
             });
         } catch (error) {
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(401).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
     // Login Check Route
-    static async loginCheck(req: Request, res: Response) {
+    static async loginCheck(req: Request, res: Response, next: NextFunction) {
         try {
             // Validate request body
             const validatedData = loginSchema.parse(req.body);
@@ -122,33 +79,12 @@ export class AuthController {
                 data: null,
             });
         } catch (error) {
-            if (error instanceof ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation error',
-                    errors: error.errors.map(err => ({
-                        field: err.path.join('.'),
-                        message: err.message,
-                    })),
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(401).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
     // Forget Password
-    static async forgetPassword(req: Request, res: Response) {
+    static async forgetPassword(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = forgetPasswordSchema.parse(req.body);
 
@@ -160,69 +96,21 @@ export class AuthController {
             });
 
         } catch (error) {
-            if (error instanceof ZodError) {
-                const errors = error.errors.map(err => ({
-                    field: err.path.join('.'),
-                    message: err.message,
-                }));
-                return res.status(422).json({
-                    success: false,
-                    message: "Validation error",
-                    errors
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
     // Reset Password
-    static async resetPassword(req: Request, res: Response) {
+    static async resetPassword(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = resetPasswordSchema.parse(req.body);
 
             await AuthService.resetPassword(validatedData);
 
-            res.redirect(`${process.env.FRONTEND_URL}/login`);
-            return res.status(200).json({
-                success: true,
-                message: 'Password reset successful',
-            });
+            return res.redirect(`${process.env.FRONTEND_URL}/login`);
 
         } catch (error) {
-            if (error instanceof ZodError) {
-                const errors = error.errors.map(err => ({
-                    field: err.path.join('.'),
-                    message: err.message,
-                }));
-                return res.status(422).json({
-                    success: false,
-                    message: "Validation error",
-                    errors
-                });
-            }
-
-            if (error instanceof Error) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                });
-            }
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
@@ -237,7 +125,7 @@ export class AuthController {
     }
 
     // Get user profile
-    static async getProfile(req: Request, res: Response) {
+    static async getProfile(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.userId;
             if (!userId) {
@@ -254,16 +142,12 @@ export class AuthController {
                 data: profile,
             });
         } catch (error) {
-            console.error('❌ Get profile error:', error);
-            return res.status(500).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Failed to get profile',
-            });
+            next(error);
         }
     }
 
     // Update user profile
-    static async updateProfile(req: Request, res: Response) {
+    static async updateProfile(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.userId;
             if (!userId) {
@@ -282,16 +166,12 @@ export class AuthController {
                 data: profile,
             });
         } catch (error) {
-            console.error('❌ Update profile error:', error);
-            return res.status(500).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Failed to update profile',
-            });
+            next(error);
         }
     }
 
     // Set document generation PIN
-    static async setPin(req: Request, res: Response) {
+    static async setPin(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.userId;
             if (!userId) {
@@ -317,16 +197,12 @@ export class AuthController {
                 data: { hasPin: result.hasPin },
             });
         } catch (error) {
-            console.error('❌ Set PIN error:', error);
-            return res.status(400).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Failed to set PIN',
-            });
+            next(error);
         }
     }
 
     // Verify document generation PIN
-    static async verifyPin(req: Request, res: Response) {
+    static async verifyPin(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.userId;
             if (!userId) {
@@ -351,11 +227,7 @@ export class AuthController {
                 data: { valid: isValid },
             });
         } catch (error) {
-            console.error('❌ Verify PIN error:', error);
-            return res.status(400).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Failed to verify PIN',
-            });
+            next(error);
         }
     }
 

@@ -1,8 +1,8 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 
 export class VerificationController {
-  async verifyDocument(req: Request, res: Response): Promise<any> {
+  async verifyDocument(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { documentNumber } = req.params;
 
@@ -62,11 +62,7 @@ export class VerificationController {
         },
       });
     } catch (error) {
-      console.error('❌ Verification error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'An error occurred while verifying the document.',
-      });
+      next(error);
     }
   }
 }

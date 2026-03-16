@@ -10,8 +10,8 @@ const verificationLimiter = rateLimit({
     message: { success: false, message: 'Too many verification attempts, please try again later.' },
 });
 
-router.get("/verification/:documentNumber", verificationLimiter, (req, res) =>
-    verificationController.verifyDocument(req, res)
+router.get("/verification/:documentNumber", verificationLimiter, (req, res, next) =>
+    verificationController.verifyDocument(req, res, next)
 );
 
 export default router;

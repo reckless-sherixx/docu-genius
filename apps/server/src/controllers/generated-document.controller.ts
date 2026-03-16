@@ -1,17 +1,46 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { s3Service } from '../services/s3.service.js';
 import { emailQueue } from '../queues/email.queue.js';
 import { renderEmailEjs } from '../lib/helper.js';
 
 export class GeneratedDocumentController {
+  private extractS3KeyFromUrl(documentUrl: string): string | null {
+    try {
+      const url = new URL(documentUrl);
+      const bucketName = process.env.AWS_S3_BUCKET_NAME || '';
+      const path = decodeURIComponent(url.pathname.replace(/^\//, ''));
+
+      if (!path) return null;
+
+      if (bucketName && url.hostname.startsWith(bucketName)) {
+        return path;
+      }
+
+      if (bucketName && path.startsWith(`${bucketName}/`)) {
+        return path.slice(bucketName.length + 1);
+      }
+
+      return path;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Get all generated documents for an organization
    */
-  async getGeneratedDocuments(req: Request, res: Response): Promise<any> {
+  async getGeneratedDocuments(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { organizationId } = req.params;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!organizationId) {
         return res.status(400).json({
@@ -67,22 +96,24 @@ export class GeneratedDocumentController {
         data: documents,
       });
     } catch (error) {
-      console.error('❌ Error fetching generated documents:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch generated documents',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Delete a generated document
    */
-  async deleteGeneratedDocument(req: Request, res: Response): Promise<any> {
+  async deleteGeneratedDocument(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!id) {
         return res.status(400).json({
@@ -123,6 +154,16 @@ export class GeneratedDocumentController {
         });
       }
 
+      const s3Key = this.extractS3KeyFromUrl(document.generated_document_url);
+      if (!s3Key) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to locate document file in storage',
+        });
+      }
+
+      await s3Service.deleteFile(s3Key);
+
       // Delete the document
       await prisma.generatedDocument.delete({
         where: { id },
@@ -133,20 +174,22 @@ export class GeneratedDocumentController {
         message: 'Document deleted successfully',
       });
     } catch (error) {
-      console.error('❌ Error deleting generated document:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to delete document',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
-  async emailDocument(req: Request, res: Response): Promise<any> {
+  async emailDocument(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
       const { recipientEmail, emailSubject, emailBody: customBody } = req.body;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!id) {
         return res.status(400).json({
@@ -225,19 +268,10 @@ export class GeneratedDocumentController {
 
       // Generate a fresh presigned download URL 
       let downloadUrl = document.generated_document_url;
-      try {
-        const url = new URL(document.generated_document_url);
-        const bucketName = process.env.AWS_S3_BUCKET_NAME || '';
-        let s3Key: string;
-        if (url.hostname.startsWith(bucketName)) {
-          s3Key = decodeURIComponent(url.pathname.slice(1));
-        } else {
-          s3Key = decodeURIComponent(url.pathname.replace(new RegExp(`^/${bucketName}/`), ''));
-        }
-        if (s3Key) {
-          downloadUrl = await s3Service.generatePresignedDownloadUrl(s3Key, 86400); // 24 hours
-        }
-      } catch {
+      const s3Key = this.extractS3KeyFromUrl(document.generated_document_url);
+      if (s3Key) {
+        downloadUrl = await s3Service.generatePresignedDownloadUrl(s3Key, 86400);
+      } else {
         console.warn('⚠️ Could not parse S3 key from document URL, using stored URL');
       }
 
@@ -268,12 +302,7 @@ export class GeneratedDocumentController {
         message: `Document emailed successfully to ${recipientEmail}`,
       });
     } catch (error) {
-      console.error('❌ Error emailing document:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to email document',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 }

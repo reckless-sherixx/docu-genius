@@ -7,6 +7,28 @@ import { emailQueue } from '../queues/email.queue.js';
 
 export class AuthService {
 
+    private static async validateLoginCredentials(data: LoginInput) {
+        const user = await prisma.user.findUnique({
+            where: { email: data.email }
+        });
+
+        if (!user) {
+            throw new Error('Invalid email or password');
+        }
+
+        const isPasswordValid = await bcrypt.compare(data.password, user.password);
+
+        if (!isPasswordValid) {
+            throw new Error('Invalid email or password');
+        }
+
+        if (!user.email_verified_at) {
+            throw new Error('Please verify your email before logging in');
+        }
+
+        return user;
+    }
+
     // Register a new user
     static async register(data: RegisterInput) {
         try {
@@ -84,28 +106,8 @@ export class AuthService {
 
     // Login user
     static async login(data: LoginInput) {
-        // Find user by email
-        const user = await prisma.user.findUnique({
-            where: { email: data.email }
-        });
+        const user = await this.validateLoginCredentials(data);
 
-        if (!user) {
-            throw new Error('Invalid email or password');
-        }
-
-        // Verify password
-        const isPasswordValid = await bcrypt.compare(data.password, user.password);
-
-        if (!isPasswordValid) {
-            throw new Error('Invalid email or password');
-        }
-
-        // Check if email is verified
-        if (!user.email_verified_at) {
-            throw new Error('Please verify your email before logging in');
-        }
-
-        // Generate JWT token
         const token = this.generateToken(user.id.toString());
 
         return {
@@ -119,39 +121,18 @@ export class AuthService {
         };
     }
 
-    // Login Check Route
     static async loginCheck(data: LoginInput) {
-        const user = await prisma.user.findUnique({
-            where: { email: data.email }
-        });
-
-        if (!user) {
-            throw new Error('Invalid email or password');
-        }
-
-        // Verify password
-        const isPasswordValid = await bcrypt.compare(data.password, user.password);
-
-        if (!isPasswordValid) {
-            throw new Error('Invalid email or password');
-        }
-
-        // Check if email is verified
-        if (!user.email_verified_at) {
-            throw new Error('Please verify your email before logging in');
-        }
+        await this.validateLoginCredentials(data);
 
         return {};
     }
 
-    // Generate JWT token
     private static generateToken(userId: string): string {
         const secret = process.env.JWT_SECRET || 'your-secret-key';
 
         return jwt.sign({ userId }, secret, { expiresIn: '7d' });
     }
 
-    // Verify JWT token
     static verifyToken(token: string): { userId: string } {
         const secret = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -163,7 +144,6 @@ export class AuthService {
         }
     }
 
-    // Verify email
     static async verifyEmail(token: string) {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { email: string };
@@ -179,12 +159,10 @@ export class AuthService {
                 throw new Error('Invalid or expired verification token');
             }
 
-            // Check if already verified
             if (user.email_verified_at) {
                 throw new Error('Email already verified');
             }
 
-            // Mark email as verified
             const updatedUser = await prisma.user.update({
                 where: { id: user.id },
                 data: {
@@ -211,7 +189,6 @@ export class AuthService {
         }
     }
 
-    // Forget Password 
     static async forgetPassword(data: ForgetPasswordInput) {
         try {
             const user = await prisma.user.findUnique({
@@ -226,10 +203,8 @@ export class AuthService {
                 throw new Error('User with this email does not exist');
             }
 
-            // Generate password reset token
             const resetToken = this.generateToken(user.id.toString());
 
-            // Store reset token in database
             await prisma.user.update({
                 where: { email: data.email },
                 data: {
@@ -325,7 +300,6 @@ export class AuthService {
         return user;
     }
 
-    // Get user profile with organizations
     static async getUserProfile(userId: string) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -371,7 +345,6 @@ export class AuthService {
         };
     }
 
-    // Set or update document generation PIN
     static async setDocumentPin(userId: string, pin: number) {
         if (pin < 1000 || pin > 9999) {
             throw new Error('PIN must be a 4-digit number');
@@ -411,7 +384,6 @@ export class AuthService {
         return user.document_generation_pin === pin;
     }
 
-    // Update user profile
     static async updateProfile(userId: string, data: { name?: string }) {
         const user = await prisma.user.update({
             where: { id: userId },

@@ -1,11 +1,11 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { pdfEditorService } from '../services/pdf-editor.service.js';
 import { s3Service } from '../services/s3.service.js';
 import { emitDocumentGenerated } from '../config/websocket.config.js';
 
 export class PDFEditorController {
-  async openForEditing(req: Request, res: Response): Promise<any> {
+  async openForEditing(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
       
@@ -61,19 +61,14 @@ export class PDFEditorController {
         },
       });
     } catch (error) {
-      console.error('❌ Error opening PDF for editing:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to open PDF for editing',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Download PDF through backend proxy 
    */
-  async downloadPDF(req: Request, res: Response): Promise<any> {
+  async downloadPDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { id } = req.params;
 
@@ -109,22 +104,24 @@ export class PDFEditorController {
       // Send PDF buffer
       res.send(pdfBuffer);
     } catch (error) {
-      console.error('❌ Error downloading PDF:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to download PDF',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Save edited PDF
    */
-  async saveEditedPDF(req: Request, res: Response): Promise<any> {
+  async saveEditedPDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId, editedContent } = req.body;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!templateId || !editedContent) {
         return res.status(400).json({
@@ -158,22 +155,24 @@ export class PDFEditorController {
         data: result,
       });
     } catch (error) {
-      console.error('❌ Error saving edited PDF:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save edited PDF',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Save editable PDF 
    */
-  async saveEditablePDF(req: Request, res: Response): Promise<any> {
+  async saveEditablePDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId, textElements, imageElements, deletedElements } = req.body;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!templateId || !textElements) {
         return res.status(400).json({
@@ -209,22 +208,16 @@ export class PDFEditorController {
         data: result,
       });
     } catch (error) {
-      console.error('❌ Error saving editable PDF:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save editable PDF',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Prepare editable PDF
    */
-  async prepareEditablePDF(req: Request, res: Response): Promise<any> {
+  async prepareEditablePDF(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId } = req.body;
-      const organizationId = (req as any).user.organizationId;
 
       if (!templateId) {
         return res.status(400).json({
@@ -233,10 +226,22 @@ export class PDFEditorController {
         });
       }
 
+      const template = await prisma.template.findUnique({
+        where: { id: templateId },
+        select: { organization_id: true },
+      });
+
+      if (!template?.organization_id) {
+        return res.status(404).json({
+          success: false,
+          message: 'Template not found',
+        });
+      }
+
 
       const result = await pdfEditorService.prepareEditablePDFWithoutText(
         templateId,
-        organizationId
+        template.organization_id
       );
 
       return res.status(200).json({
@@ -251,19 +256,14 @@ export class PDFEditorController {
         nlpPlaceholders: result.nlpPlaceholders || [],
       });
     } catch (error) {
-      console.error('❌ Error preparing editable PDF:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to prepare editable PDF',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Save template as permanent 
    */
-  async savePermanentTemplate(req: Request, res: Response): Promise<any> {
+  async savePermanentTemplate(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId, templateName, templateDescription } = req.body;
 
@@ -307,22 +307,24 @@ export class PDFEditorController {
         data: serializedTemplate,
       });
     } catch (error) {
-      console.error('❌ Error saving permanent template:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save permanent template',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 
   /**
    * Generate a document from a template
    */
-  async generateDocument(req: Request, res: Response): Promise<any> {
+  async generateDocument(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { templateId, textElements, imageElements, pin } = req.body;
-      const userId = (req as any).userId;
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
 
       if (!templateId) {
         return res.status(400).json({
@@ -426,12 +428,7 @@ export class PDFEditorController {
         },
       });
     } catch (error) {
-      console.error('❌ Error generating document:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to generate document',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      next(error);
     }
   }
 }

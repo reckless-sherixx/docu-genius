@@ -1,20 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service.js';
 
-
-declare global {
-    namespace Express {
-        interface Request {
-            userId?: string;
-            user?: {
-                id: string;
-                email: string;
-                name: string;
-            };
-        }
-    }
-}
-
 export const authMiddleware = async (
     req: Request,
     res: Response,

@@ -1,4 +1,4 @@
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getS3Client, awsConfig } from '../config/aws.config.js';
 import crypto from 'crypto';
@@ -6,6 +6,25 @@ import crypto from 'crypto';
 export class S3Service {
   private s3Client = getS3Client();
   private bucketName = awsConfig.bucketName;
+
+  async generatePresignedUploadUrlForKey(
+    key: string,
+    fileType: string,
+    expiresIn: number = 900
+  ): Promise<string> {
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        ContentType: fileType,
+      });
+
+      return await getSignedUrl(this.s3Client, command, { expiresIn });
+    } catch (error) {
+      console.error('Error generating pre-signed URL for key:', error);
+      throw new Error('Failed to generate upload URL');
+    }
+  }
 
   async generatePresignedUploadUrl(
     fileName: string,
@@ -77,6 +96,20 @@ export class S3Service {
     } catch (error) {
       console.error('Error deleting file from S3:', error);
       throw new Error('Failed to delete file');
+    }
+  }
+
+  async fileExists(key: string): Promise<boolean> {
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      await this.s3Client.send(command);
+      return true;
+    } catch {
+      return false;
     }
   }
 

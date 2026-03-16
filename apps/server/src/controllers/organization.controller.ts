@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { createOrganizationSchema } from "../schemas/organization.schema.js";
 import { OrganizationService } from "../services/organization.service.js";
 import { emitMemberJoined, emitMemberRoleUpdated, emitMemberRemoved } from "../config/websocket.config.js";
@@ -6,7 +6,7 @@ import prisma from "../lib/prisma.js";
 
 
 export class OrganizationController {
-    static async getUserOrganizations(req: Request, res: Response) {
+    static async getUserOrganizations(req: Request, res: Response, next: NextFunction) {
         try {
             const userId = req.userId || req.user?.id;
             
@@ -24,15 +24,11 @@ export class OrganizationController {
                 data: organizations,
             });
         } catch (error) {
-            console.error('Error fetching organizations:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
-    static async getOrganizationMembers(req: Request, res: Response) {
+    static async getOrganizationMembers(req: Request, res: Response, next: NextFunction) {
         try {
             const { organizationId } = req.params;
             const userId = req.userId || req.user?.id;
@@ -57,16 +53,12 @@ export class OrganizationController {
                 success: true,
                 data: members,
             });
-        } catch (error: any) {
-            console.error('Error fetching organization members:', error);
-            return res.status(error.message?.includes('not a member') ? 403 : 500).json({
-                success: false,
-                message: error.message || 'Internal server error',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async updateMemberRole(req: Request, res: Response) {
+    static async updateMemberRole(req: Request, res: Response, next: NextFunction) {
         try {
             const { organizationId, memberId } = req.params;
             const { role } = req.body;
@@ -107,16 +99,12 @@ export class OrganizationController {
                 success: true,
                 message: 'Member role updated successfully',
             });
-        } catch (error: any) {
-            console.error('Error updating member role:', error);
-            return res.status(error.message?.includes('Only ADMIN') ? 403 : 500).json({
-                success: false,
-                message: error.message || 'Internal server error',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async removeMember(req: Request, res: Response) {
+    static async removeMember(req: Request, res: Response, next: NextFunction) {
         try {
             const { organizationId, memberId } = req.params;
             const userId = req.userId || req.user?.id;
@@ -150,16 +138,12 @@ export class OrganizationController {
                 success: true,
                 message: 'Member removed successfully',
             });
-        } catch (error: any) {
-            console.error('Error removing member:', error);
-            return res.status(error.message?.includes('Only ADMIN') || error.message?.includes('cannot remove') ? 403 : 500).json({
-                success: false,
-                message: error.message || 'Internal server error',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 
-    static async createOrganization(req: Request, res: Response) {
+    static async createOrganization(req: Request, res: Response, next: NextFunction) {
         try { 
             const validatedData = createOrganizationSchema.parse(req.body);
 
@@ -184,15 +168,11 @@ export class OrganizationController {
                 data: organization,
             });
         } catch (error) {
-            console.error('Error creating organization:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-            });
+            next(error);
         }
     }
 
-    static async joinOrganization(req: Request, res: Response) {
+    static async joinOrganization(req: Request, res: Response, next: NextFunction) {
         try {
             const { pin } = req.body;
 
@@ -239,12 +219,8 @@ export class OrganizationController {
                 message: 'Successfully joined organization',
                 data: organization,
             });
-        } catch (error: any) {
-            console.error('Error joining organization:', error);
-            return res.status(400).json({
-                success: false,
-                message: error.message || 'Failed to join organization',
-            });
+        } catch (error) {
+            next(error);
         }
     }
 }
