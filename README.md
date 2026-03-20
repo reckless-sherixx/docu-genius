@@ -23,38 +23,33 @@ Users upload a company-branded PDF template, define fillable fields via a canvas
 
 ## Screenshots
 
+### Landing Page
+![Landing Page 1](./docs/screenshots/landing1.png)
+![Landing Page 2](./docs/screenshots/landing2.png)
+![Landing Page 3](./docs/screenshots/landing3.png)
+![Landing Page 4](./docs/screenshots/landing4.png)
+
+### Authentication
+![Login Page](./docs/screenshots/login-page.png)
+
+### Organization Onboarding
+![Organization Onboarding](./docs/screenshots/organization-onboarding-page.png)
+
 ### Dashboard
 ![Dashboard Overview](./docs/screenshots/dashboard.png)
 
-### PDF Editor
-![PDF Canvas Editor](./docs/screenshots/pdf-editor.png)
+### Template Management
+![Template Upload](./docs/screenshots/upload-template.png)
+![Template Gallery](./docs/screenshots/template-gallery.png)
 
-### Template Upload
-![Template Upload Flow](./docs/screenshots/template-upload.png)
+### PDF Editor
+![Text Editor & PDF Canvas](./docs/screenshots/text-editor.png)
 
 ### Document Generation
 ![Document Generation](./docs/screenshots/document-generation.png)
 
-#### How to Add Images
-
-1. Create a `docs/screenshots/` folder in the root of the repository if it doesn't exist.
-2. Place your screenshot images (`.png`, `.jpg`, `.gif`) in the `docs/screenshots/` folder.
-3. Use the following Markdown syntax to embed an image in the README:
-
-```markdown
-![Alt text describing the image](./docs/screenshots/image-name.png)
-```
-
-**Example:**
-- `![Dashboard Overview](./docs/screenshots/dashboard.png)` — embeds dashboard.png with the alt text "Dashboard Overview"
-
-**Tips:**
-- Always include descriptive alt text for accessibility.
-- Use relative paths starting with `./` so images work on GitHub, GitHub Pages, and locally.
-- Keep image file sizes under 1 MB for faster page loads.
-- Use PNG for UI screenshots, GIF for animations.
-
----
+### User Profile
+![Profile Page](./docs/screenshots/profile-page.png)
 
 ## Features
 
