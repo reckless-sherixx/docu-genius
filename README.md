@@ -8,6 +8,7 @@ Users upload a company-branded PDF template, define fillable fields via a canvas
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Monorepo Structure](#monorepo-structure)
@@ -17,6 +18,41 @@ Users upload a company-branded PDF template, define fillable fields via a canvas
 - [Environment Variables](#environment-variables)
 - [Development](#development)
 - [Build](#build)
+
+---
+
+## Screenshots
+
+### Dashboard
+![Dashboard Overview](./docs/screenshots/dashboard.png)
+
+### PDF Editor
+![PDF Canvas Editor](./docs/screenshots/pdf-editor.png)
+
+### Template Upload
+![Template Upload Flow](./docs/screenshots/template-upload.png)
+
+### Document Generation
+![Document Generation](./docs/screenshots/document-generation.png)
+
+#### How to Add Images
+
+1. Create a `docs/screenshots/` folder in the root of the repository if it doesn't exist.
+2. Place your screenshot images (`.png`, `.jpg`, `.gif`) in the `docs/screenshots/` folder.
+3. Use the following Markdown syntax to embed an image in the README:
+
+```markdown
+![Alt text describing the image](./docs/screenshots/image-name.png)
+```
+
+**Example:**
+- `![Dashboard Overview](./docs/screenshots/dashboard.png)` — embeds dashboard.png with the alt text "Dashboard Overview"
+
+**Tips:**
+- Always include descriptive alt text for accessibility.
+- Use relative paths starting with `./` so images work on GitHub, GitHub Pages, and locally.
+- Keep image file sizes under 1 MB for faster page loads.
+- Use PNG for UI screenshots, GIF for animations.
 
 ---
 
