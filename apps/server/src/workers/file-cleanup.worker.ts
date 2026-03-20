@@ -9,7 +9,6 @@ interface CleanupJob {
 }
 
 /**
- * File Cleanup Worker
  * Deletes expired temporary files from S3 and database
  */
 class FileCleanupWorker {
@@ -25,17 +24,13 @@ class FileCleanupWorker {
         return;
       }
 
-      // Delete PDF from S3
       if (template.s3_key) {
         await s3Service.deleteFile(template.s3_key);
       }
 
-      // Delete companion JSON elements file if present
       if (template.extracted_text?.endsWith('-elements.json')) {
         await s3Service.deleteFile(template.extracted_text).catch(() => {});
       }
-
-      // Delete from database
       await prisma.template.delete({
         where: { id: templateId },
       });
@@ -52,7 +47,6 @@ class FileCleanupWorker {
     try {
       const now = new Date();
 
-      // Find temporary templates that have expired
       const expiredTemplates = await prisma.template.findMany({
         where: {
           is_temporary: true,
@@ -64,17 +58,13 @@ class FileCleanupWorker {
 
       for (const template of expiredTemplates) {
         try {
-          // Delete PDF from S3
           if (template.s3_key) {
             await s3Service.deleteFile(template.s3_key);
           }
-
-          // Delete companion JSON elements file if present
           if (template.extracted_text?.endsWith('-elements.json')) {
             await s3Service.deleteFile(template.extracted_text).catch(() => {});
           }
 
-          // Delete from database
           await prisma.template.delete({
             where: { id: template.id },
           });
