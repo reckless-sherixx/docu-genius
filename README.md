@@ -116,7 +116,6 @@ Users upload a company-branded PDF template, define fillable fields via a canvas
 | File Storage | AWS S3 (`@aws-sdk/client-s3`) |
 | Email | Nodemailer 7 + EJS templates |
 | PDF Processing | `pdf-lib`, `pdf-parse`, `pdf-to-img`, Tesseract.js |
-| AI | Google Gemini (`@google/generative-ai`) |
 | NLP | `node-nlp` |
 | Real-time | Socket.IO 4 |
 | Validation | Zod |
